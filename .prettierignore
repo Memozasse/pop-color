@@ -1,0 +1,7 @@
+node_modules
+dist
+web-build
+.expo
+coverage
+*.svg
+package-lock.json

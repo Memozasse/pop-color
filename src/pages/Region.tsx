@@ -1,10 +1,25 @@
-import React from 'react';
+import React, { createContext, useContext } from 'react';
 import { Path, Circle, Ellipse, Rect, Polygon } from 'react-native-svg';
 
 import type { RegionColors } from '@/data/types';
 
 const OUTLINE = '#1F1B30';
 const DEFAULT_FILL = '#FFFFFF';
+const TRANSPARENT_FILL = 'transparent';
+
+/**
+ * V2 brush engine renders pages as outline-only on top of a Skia paint
+ * layer. Setting this context to `true` makes every Region render with a
+ * transparent fill so the strokes underneath show through, while keeping
+ * the outline drawn.
+ */
+export const OutlineOnlyContext = createContext<boolean>(false);
+
+const useFill = (id: string, regionColors: RegionColors, defaultFill: string): string => {
+  const outlineOnly = useContext(OutlineOnlyContext);
+  if (outlineOnly) return TRANSPARENT_FILL;
+  return regionColors[id] ?? defaultFill;
+};
 
 interface BaseProps {
   id: string;
@@ -24,7 +39,7 @@ export const PathRegion: React.FC<BaseProps & { d: string }> = ({
 }) => (
   <Path
     d={d}
-    fill={regionColors[id] ?? defaultFill}
+    fill={useFill(id, regionColors, defaultFill)}
     stroke={OUTLINE}
     strokeWidth={strokeWidth}
     strokeLinejoin="round"
@@ -40,7 +55,7 @@ export const CircleRegion: React.FC<
     cx={cx}
     cy={cy}
     r={r}
-    fill={regionColors[id] ?? defaultFill}
+    fill={useFill(id, regionColors, defaultFill)}
     stroke={OUTLINE}
     strokeWidth={strokeWidth}
     onPress={onRegionPress ? () => onRegionPress(id) : undefined}
@@ -65,7 +80,7 @@ export const EllipseRegion: React.FC<
     cy={cy}
     rx={rx}
     ry={ry}
-    fill={regionColors[id] ?? defaultFill}
+    fill={useFill(id, regionColors, defaultFill)}
     stroke={OUTLINE}
     strokeWidth={strokeWidth}
     onPress={onRegionPress ? () => onRegionPress(id) : undefined}
@@ -92,7 +107,7 @@ export const RectRegion: React.FC<
     width={width}
     height={height}
     rx={rx}
-    fill={regionColors[id] ?? defaultFill}
+    fill={useFill(id, regionColors, defaultFill)}
     stroke={OUTLINE}
     strokeWidth={strokeWidth}
     onPress={onRegionPress ? () => onRegionPress(id) : undefined}
@@ -109,7 +124,7 @@ export const PolygonRegion: React.FC<BaseProps & { points: string }> = ({
 }) => (
   <Polygon
     points={points}
-    fill={regionColors[id] ?? defaultFill}
+    fill={useFill(id, regionColors, defaultFill)}
     stroke={OUTLINE}
     strokeWidth={strokeWidth}
     strokeLinejoin="round"

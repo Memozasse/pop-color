@@ -1,12 +1,18 @@
 import { PAGES, THEMES, getPage, getPagesForTheme, getTheme } from '@/data/pages';
 
 describe('pages manifest', () => {
-  it('has at least 20 pages', () => {
-    expect(PAGES.length).toBeGreaterThanOrEqual(20);
+  it('has at least 40 pages (20 vector + 23 raster)', () => {
+    expect(PAGES.length).toBeGreaterThanOrEqual(40);
   });
 
-  it('has 4 themes', () => {
-    expect(THEMES).toHaveLength(4);
+  it('has 5 themes', () => {
+    expect(THEMES).toHaveLength(5);
+  });
+
+  it('every page has a kind discriminator', () => {
+    PAGES.forEach((page) => {
+      expect(['vector', 'raster']).toContain(page.kind);
+    });
   });
 
   it('every page has unique id', () => {
@@ -14,9 +20,23 @@ describe('pages manifest', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it('every page has at least 3 regions', () => {
-    PAGES.forEach((page) => {
-      expect(page.regions.length).toBeGreaterThanOrEqual(3);
+  it('every vector page has at least 3 regions', () => {
+    PAGES.filter((p) => p.kind === 'vector').forEach((page) => {
+      if (page.kind === 'vector') {
+        expect(page.regions.length).toBeGreaterThanOrEqual(3);
+      }
+    });
+  });
+
+  it('every raster page has a source and no regions', () => {
+    const rasters = PAGES.filter((p) => p.kind === 'raster');
+    expect(rasters.length).toBeGreaterThanOrEqual(23);
+    rasters.forEach((page) => {
+      if (page.kind === 'raster') {
+        expect(page.source).toBeDefined();
+      }
+      // @ts-expect-error -- raster pages should not carry regions
+      expect(page.regions).toBeUndefined();
     });
   });
 
@@ -50,6 +70,18 @@ describe('pages manifest', () => {
     const pages = getPagesForTheme('animals');
     expect(pages.length).toBeGreaterThanOrEqual(5);
     pages.forEach((p) => expect(p.themeId).toBe('animals'));
+  });
+
+  it('Women & Flowers theme has 20 raster pages', () => {
+    const pages = getPagesForTheme('women-flowers');
+    expect(pages).toHaveLength(20);
+    pages.forEach((p) => expect(p.kind).toBe('raster'));
+  });
+
+  it('Animals theme includes vector + raster pages', () => {
+    const pages = getPagesForTheme('animals');
+    expect(pages.some((p) => p.kind === 'vector')).toBe(true);
+    expect(pages.some((p) => p.kind === 'raster')).toBe(true);
   });
 
   it('getPagesForTheme returns empty for unknown theme', () => {

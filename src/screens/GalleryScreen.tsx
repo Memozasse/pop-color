@@ -57,6 +57,7 @@ export const GalleryScreen: React.FC = () => {
                 page={page}
                 size={tileSize}
                 regionColors={inProgress?.regionColors}
+                strokes={inProgress?.strokes}
                 label={page.title}
                 onPress={() =>
                   navigation.navigate('Coloring', {

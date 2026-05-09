@@ -2,13 +2,16 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg from 'react-native-svg';
 
-import type { PageDefinition, RegionColors } from '@/data/types';
+import { StrokesSvgLayer } from '@/components/StrokesSvgLayer';
+import type { PageDefinition, RegionColors, Stroke } from '@/data/types';
+import { OutlineOnlyContext } from '@/pages/Region';
 import { colors, radius, shadow, spacing, typography } from '@/theme';
 
 interface PageThumbnailProps {
   page: PageDefinition;
   size: number;
   regionColors?: RegionColors;
+  strokes?: Stroke[];
   onPress?: () => void;
   label?: string;
   testID?: string;
@@ -18,11 +21,13 @@ export const PageThumbnail: React.FC<PageThumbnailProps> = ({
   page,
   size,
   regionColors = {},
+  strokes,
   onPress,
   label,
   testID,
 }) => {
   const Component = page.Component;
+  const hasStrokes = !!strokes && strokes.length > 0;
   return (
     <Pressable
       onPress={onPress}
@@ -37,7 +42,19 @@ export const PageThumbnail: React.FC<PageThumbnailProps> = ({
     >
       <View style={[styles.canvas, { width: size, height: size }]}>
         <Svg width={size} height={size} viewBox={`0 0 ${page.width} ${page.height}`}>
-          <Component regionColors={regionColors} />
+          {hasStrokes ? (
+            <>
+              <StrokesSvgLayer
+                strokes={strokes as Stroke[]}
+                geometry={page.regionGeometry}
+              />
+              <OutlineOnlyContext.Provider value>
+                <Component regionColors={{}} />
+              </OutlineOnlyContext.Provider>
+            </>
+          ) : (
+            <Component regionColors={regionColors} />
+          )}
         </Svg>
       </View>
       {label ? (

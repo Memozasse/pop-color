@@ -88,6 +88,7 @@ export const MyCreationsScreen: React.FC = () => {
                       page={page}
                       size={tileSize}
                       regionColors={artwork.regionColors}
+                      strokes={artwork.strokes}
                     />
                   </Pressable>
                   <View style={styles.cardMeta}>

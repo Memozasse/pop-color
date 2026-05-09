@@ -19,33 +19,49 @@ import { CAR_PAGE } from '@/pages/vehicles/car';
 import { TRAIN_PAGE } from '@/pages/vehicles/train';
 import { TRUCK_PAGE } from '@/pages/vehicles/truck';
 
-import type { PageDefinition, ThemeGroup } from './types';
+import { REGION_GEOMETRY } from './regionGeometryRegistry';
+import type { PageDefinition, RegionGeometry, ThemeGroup } from './types';
+
+const withGeometry = (
+  page: Omit<PageDefinition, 'regionGeometry'>,
+): PageDefinition => {
+  const geometry: RegionGeometry | undefined = REGION_GEOMETRY[page.id];
+  if (!geometry) {
+    throw new Error(`[pages] missing region geometry for "${page.id}"`);
+  }
+  for (const id of page.regions) {
+    if (!geometry[id]) {
+      throw new Error(`[pages] region geometry for "${page.id}" is missing region "${id}"`);
+    }
+  }
+  return { ...page, regionGeometry: geometry };
+};
 
 export const PAGES: PageDefinition[] = [
   // Animals
-  CAT_PAGE,
-  DOG_PAGE,
-  FISH_PAGE,
-  BUTTERFLY_PAGE,
-  BUNNY_PAGE,
+  withGeometry(CAT_PAGE),
+  withGeometry(DOG_PAGE),
+  withGeometry(FISH_PAGE),
+  withGeometry(BUTTERFLY_PAGE),
+  withGeometry(BUNNY_PAGE),
   // Fruits
-  APPLE_PAGE,
-  BANANA_PAGE,
-  STRAWBERRY_PAGE,
-  WATERMELON_PAGE,
-  PINEAPPLE_PAGE,
+  withGeometry(APPLE_PAGE),
+  withGeometry(BANANA_PAGE),
+  withGeometry(STRAWBERRY_PAGE),
+  withGeometry(WATERMELON_PAGE),
+  withGeometry(PINEAPPLE_PAGE),
   // Vehicles
-  CAR_PAGE,
-  TRUCK_PAGE,
-  BOAT_PAGE,
-  AIRPLANE_PAGE,
-  TRAIN_PAGE,
+  withGeometry(CAR_PAGE),
+  withGeometry(TRUCK_PAGE),
+  withGeometry(BOAT_PAGE),
+  withGeometry(AIRPLANE_PAGE),
+  withGeometry(TRAIN_PAGE),
   // Shapes
-  STAR_PAGE,
-  HEART_PAGE,
-  FLOWER_PAGE,
-  SUN_PAGE,
-  RAINBOW_PAGE,
+  withGeometry(STAR_PAGE),
+  withGeometry(HEART_PAGE),
+  withGeometry(FLOWER_PAGE),
+  withGeometry(SUN_PAGE),
+  withGeometry(RAINBOW_PAGE),
 ];
 
 const PAGE_INDEX: Map<string, PageDefinition> = new Map(PAGES.map((p) => [p.id, p]));

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg from 'react-native-svg';
 
 import { StrokesSvgLayer } from '@/components/StrokesSvgLayer';
@@ -26,7 +26,6 @@ export const PageThumbnail: React.FC<PageThumbnailProps> = ({
   label,
   testID,
 }) => {
-  const Component = page.Component;
   const hasStrokes = !!strokes && strokes.length > 0;
   return (
     <Pressable
@@ -41,21 +40,42 @@ export const PageThumbnail: React.FC<PageThumbnailProps> = ({
       testID={testID}
     >
       <View style={[styles.canvas, { width: size, height: size }]}>
-        <Svg width={size} height={size} viewBox={`0 0 ${page.width} ${page.height}`}>
-          {hasStrokes ? (
-            <>
-              <StrokesSvgLayer
-                strokes={strokes as Stroke[]}
-                geometry={page.regionGeometry}
-              />
-              <OutlineOnlyContext.Provider value>
-                <Component regionColors={{}} />
-              </OutlineOnlyContext.Provider>
-            </>
-          ) : (
-            <Component regionColors={regionColors} />
-          )}
-        </Svg>
+        {page.kind === 'vector' ? (
+          <Svg width={size} height={size} viewBox={`0 0 ${page.width} ${page.height}`}>
+            {hasStrokes ? (
+              <>
+                <StrokesSvgLayer
+                  strokes={strokes as Stroke[]}
+                  geometry={page.regionGeometry}
+                />
+                <OutlineOnlyContext.Provider value>
+                  <page.Component regionColors={{}} />
+                </OutlineOnlyContext.Provider>
+              </>
+            ) : (
+              <page.Component regionColors={regionColors} />
+            )}
+          </Svg>
+        ) : (
+          <View style={{ width: size, height: size }}>
+            {hasStrokes ? (
+              <Svg
+                width={size}
+                height={size}
+                viewBox={`0 0 ${page.width} ${page.height}`}
+                style={StyleSheet.absoluteFill}
+              >
+                <StrokesSvgLayer strokes={strokes as Stroke[]} geometry={{}} />
+              </Svg>
+            ) : null}
+            <Image
+              source={page.source}
+              style={[StyleSheet.absoluteFill, { width: size, height: size }]}
+              resizeMode="contain"
+              fadeDuration={0}
+            />
+          </View>
+        )}
       </View>
       {label ? (
         <Text style={styles.label} numberOfLines={1}>

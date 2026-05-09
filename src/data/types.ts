@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react';
+import type { ImageSourcePropType } from 'react-native';
 
 export type RegionColors = Record<string, string>;
 
@@ -16,17 +17,38 @@ export type RegionShape =
 
 export type RegionGeometry = Record<string, RegionShape>;
 
-export interface PageDefinition {
+interface PageDefinitionBase {
   id: string;
   title: string;
   themeId: string;
   emoji: string;
   width: number;
   height: number;
+}
+
+/**
+ * Vector pages render via an SVG `Component` that draws the outline (and, in
+ * V1, fillable regions). They support stay-inside-lines clipping because
+ * each region has named geometry in `regionGeometry`.
+ */
+export interface VectorPageDefinition extends PageDefinitionBase {
+  kind: 'vector';
   regions: string[];
   regionGeometry: RegionGeometry;
   Component: ComponentType<PageRenderProps>;
 }
+
+/**
+ * Raster pages render via an `Image` background (PNG/JPG line art). They do
+ * NOT support stay-inside-lines because there are no named regions — the
+ * brush paints freely over the whole canvas.
+ */
+export interface RasterPageDefinition extends PageDefinitionBase {
+  kind: 'raster';
+  source: ImageSourcePropType;
+}
+
+export type PageDefinition = VectorPageDefinition | RasterPageDefinition;
 
 export interface ThemeGroup {
   id: string;

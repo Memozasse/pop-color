@@ -13,7 +13,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { StyleSheet, View, type ViewStyle } from 'react-native';
+import { Image, StyleSheet, View, type ViewStyle } from 'react-native';
 import {
   Gesture,
   GestureDetector,
@@ -92,12 +92,19 @@ export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
     },
     ref,
   ) => {
-    const Component = page.Component;
+    // Stay-inside-lines is only meaningful on vector pages (which have named
+    // region geometry to clip against). Raster pages always paint freely.
+    const effectiveStayInside = page.kind === 'vector' && stayInside;
 
-    // Pre-compile region paths for hit-testing and clipping.
+    // Pre-compile region paths for hit-testing and clipping. Raster pages
+    // have no regions so the maps are empty.
+    const regionGeometry = useMemo(
+      () => (page.kind === 'vector' ? page.regionGeometry : {}),
+      [page],
+    );
     const compiledRegions = useMemo(
-      () => compileRegionGeometry(page.regionGeometry),
-      [page.regionGeometry],
+      () => compileRegionGeometry(regionGeometry),
+      [regionGeometry],
     );
     const regionPathsById = useMemo(() => {
       const map: Record<string, SkPath> = {};
@@ -209,10 +216,10 @@ export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
     const beginStroke = useCallback(
       (touchX: number, touchY: number) => {
         const { x, y } = detectorToCanvas(touchX, touchY);
-        const regionId = stayInside
+        const regionId = effectiveStayInside
           ? findRegionAt(
               compiledRegions,
-              page.regionGeometry,
+              regionGeometry,
               x,
               y,
               page.width,
@@ -234,11 +241,11 @@ export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
         brushSize,
         compiledRegions,
         detectorToCanvas,
+        effectiveStayInside,
         isErasing,
-        page.regionGeometry,
+        regionGeometry,
         page.height,
         page.width,
-        stayInside,
       ],
     );
 
@@ -444,17 +451,35 @@ export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
                 </Group>
               </Canvas>
 
-              {/* Outline overlay (transparent fill so paint shows through) */}
+              {/* Outline overlay (transparent fill so paint shows through).
+                 Vector pages render an SVG outline; raster pages render the
+                 baked-in PNG line art. */}
               <View style={[styles.absoluteFill, containerStyle]} pointerEvents="none">
-                <Svg
-                  width={size}
-                  height={size}
-                  viewBox={`0 0 ${page.width} ${page.height}`}
-                >
-                  <OutlineOnlyContext.Provider value>
-                    <Component regionColors={{}} />
-                  </OutlineOnlyContext.Provider>
-                </Svg>
+                {page.kind === 'vector' ? (
+                  <Svg
+                    width={size}
+                    height={size}
+                    viewBox={`0 0 ${page.width} ${page.height}`}
+                  >
+                    <OutlineOnlyContext.Provider value>
+                      <page.Component regionColors={{}} />
+                    </OutlineOnlyContext.Provider>
+                  </Svg>
+                ) : (
+                  <Image
+                    source={page.source}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: size,
+                      height: size,
+                      borderRadius: radius.lg,
+                    }}
+                    resizeMode="contain"
+                    fadeDuration={0}
+                  />
+                )}
               </View>
             </Animated.View>
           </View>

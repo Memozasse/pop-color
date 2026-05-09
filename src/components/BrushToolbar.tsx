@@ -11,6 +11,11 @@ interface BrushToolbarProps {
   onSelectSize: (size: number) => void;
   onToggleEraser: () => void;
   onToggleStayInside: () => void;
+  /**
+   * Whether to render the stay-inside-lines toggle. Hidden on raster pages
+   * since they have no region geometry to clip against.
+   */
+  showStayInside?: boolean;
 }
 
 const SIZES: { key: BrushSizeKey; label: string; dot: number }[] = [
@@ -26,6 +31,7 @@ export const BrushToolbar: React.FC<BrushToolbarProps> = ({
   onSelectSize,
   onToggleEraser,
   onToggleStayInside,
+  showStayInside = true,
 }) => (
   <View style={styles.row} accessibilityRole="toolbar">
     <View style={styles.group}>
@@ -78,28 +84,32 @@ export const BrushToolbar: React.FC<BrushToolbarProps> = ({
       </Text>
     </Pressable>
 
-    <Pressable
-      onPress={onToggleStayInside}
-      accessibilityRole="switch"
-      accessibilityLabel="Stay inside the lines"
-      accessibilityState={{ checked: stayInside }}
-      testID="btn-stay-inside"
-      style={({ pressed }) => [
-        styles.stayInside,
-        stayInside && styles.stayInsideActive,
-        pressed && styles.toolButtonPressed,
-      ]}
-    >
-      <Text
-        style={[
-          styles.stayInsideLabel,
-          stayInside && styles.stayInsideLabelActive,
+    {showStayInside ? (
+      <Pressable
+        onPress={onToggleStayInside}
+        accessibilityRole="switch"
+        accessibilityLabel="Stay inside the lines"
+        accessibilityState={{ checked: stayInside }}
+        testID="btn-stay-inside"
+        style={({ pressed }) => [
+          styles.stayInside,
+          stayInside && styles.stayInsideActive,
+          pressed && styles.toolButtonPressed,
         ]}
-        numberOfLines={1}
       >
-        {stayInside ? '🔒 Stay inside' : '🔓 Anywhere'}
-      </Text>
-    </Pressable>
+        <Text
+          style={[
+            styles.stayInsideLabel,
+            stayInside && styles.stayInsideLabelActive,
+          ]}
+          numberOfLines={1}
+        >
+          {stayInside ? '🔒 Stay inside' : '🔓 Anywhere'}
+        </Text>
+      </Pressable>
+    ) : (
+      <View style={styles.spacer} />
+    )}
   </View>
 );
 
@@ -152,6 +162,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...shadow.button,
+  },
+  spacer: {
+    flex: 1,
   },
   stayInsideActive: {
     backgroundColor: colors.brand,

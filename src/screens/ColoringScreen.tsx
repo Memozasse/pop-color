@@ -118,6 +118,11 @@ export const ColoringScreen: React.FC = () => {
 
   const canvasSize = Math.min(width - spacing.lg * 2, height * 0.5);
 
+  // Stay-inside-lines is meaningless on raster pages (no regions) — hide the
+  // toggle and force-disable clipping.
+  const supportsStayInside = page.kind === 'vector';
+  const effectiveStayInside = supportsStayInside && stayInside;
+
   const actions: ToolbarAction[] = [
     {
       id: 'undo',
@@ -169,7 +174,7 @@ export const ColoringScreen: React.FC = () => {
           activeColor={activeColor}
           brushSize={brushSize}
           isErasing={isErasing}
-          stayInside={stayInside}
+          stayInside={effectiveStayInside}
           onStrokeEnd={handleStrokeEnd}
           onTwoFingerTap={undo}
           onThreeFingerTap={redo}
@@ -179,10 +184,11 @@ export const ColoringScreen: React.FC = () => {
       <BrushToolbar
         brushSize={brushSize}
         isErasing={isErasing}
-        stayInside={stayInside}
+        stayInside={effectiveStayInside}
         onSelectSize={setBrushSize}
         onToggleEraser={toggleEraser}
         onToggleStayInside={toggleStayInside}
+        showStayInside={supportsStayInside}
       />
       <Toolbar actions={actions} />
       <ColorPalette

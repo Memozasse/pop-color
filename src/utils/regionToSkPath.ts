@@ -127,9 +127,14 @@ const isFullCanvasBackdrop = (
   height: number,
 ): boolean => {
   if (shape.type === 'path') {
-    // Common pattern in pages: "M0 0 H400 V400 H0 Z"
+    // Common pattern in pages: "M0 0 H400 V400 H0 Z" — only treat as a
+    // backdrop when the captured H/V values actually span the full canvas.
+    // Otherwise partial-canvas paths (e.g. the boat page's `sky` covering
+    // only the top 65% of the canvas) get misclassified and skipped during
+    // hit-testing.
     const d = shape.d.replace(/\s+/g, ' ').trim();
-    return /^M\s*0\s*0\s*H\s*\d+\s*V\s*\d+\s*H\s*0\s*Z?$/i.test(d);
+    const m = d.match(/^M\s*0\s*0\s*H\s*(\d+)\s*V\s*(\d+)\s*H\s*0\s*Z?$/i);
+    return !!m && Number(m[1]) >= width && Number(m[2]) >= height;
   }
   if (shape.type === 'rect') {
     return (

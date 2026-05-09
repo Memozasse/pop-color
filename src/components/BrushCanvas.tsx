@@ -1,7 +1,6 @@
 import {
   Canvas,
   Group,
-  Path as SkiaPath,
   Skia,
   type SkPath,
 } from '@shopify/react-native-skia';
@@ -25,30 +24,40 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg from 'react-native-svg';
 
+import { SkiaStrokeView } from '@/components/SkiaStrokeView';
+import type { BrushConfig } from '@/data/brushes';
+import { ERASER_COLOR } from '@/data/palettes';
 import type {
   PageDefinition,
   Stroke,
   StrokePoint,
 } from '@/data/types';
 import { OutlineOnlyContext } from '@/pages/Region';
-import { createStroke } from '@/state/brushStore';
+import { applyTint, createStroke } from '@/state/brushStore';
 import { colors, radius, shadow } from '@/theme';
+import { sampleColorAt } from '@/utils/brushRender';
 import {
   compileRegionGeometry,
   findRegionAt,
 } from '@/utils/regionToSkPath';
 
-const PAPER = '#FFFFFF';
-
 interface BrushCanvasProps {
   page: PageDefinition;
   size: number;
   strokes: Stroke[];
+  /** Active brush configuration (registry id, kind, paint properties). */
+  activeBrush: BrushConfig;
+  /** User's selected colour BEFORE tint is applied. */
   activeColor: string;
-  brushSize: number;
-  isErasing: boolean;
+  /** Tint slider position 0..1; 0.5 = no tint. */
+  tint: number;
+  /** Multiplier on the brush's baseSize (0.4..2.0). */
+  sizeMultiplier: number;
+  /** When true, the next tap samples a colour and triggers `onEyedropperSample`. */
+  eyedropperActive: boolean;
   stayInside: boolean;
   onStrokeEnd: (stroke: Stroke) => void;
+  onEyedropperSample?: (color: string) => void;
   onTwoFingerTap?: () => void;
   onThreeFingerTap?: () => void;
   style?: ViewStyle;
@@ -59,20 +68,30 @@ export interface BrushCanvasHandle {
   resetTransform: () => void;
 }
 
+type GestureMode = 'paint' | 'fill' | 'eyedrop' | 'idle';
+
 /**
- * V2 brush engine.
+ * V3 brush engine.
  *
  * Renders an Skia canvas with all committed brush strokes (clipped to their
  * captured regions when stay-inside-lines was on) plus the in-progress draft
- * stroke, then overlays the page outline as a transparent-fill SVG.
+ * stroke, then overlays the page outline as a transparent-fill SVG (vector)
+ * or PNG (raster).
  *
  * Multi-touch gestures (composed via react-native-gesture-handler):
- *   - 1-finger pan          → freehand brush stroke
+ *   - 1-finger pan          → freehand brush stroke (path / stamp brushes)
+ *   - 1-finger tap          → bucket fill (vector pages) or eyedropper sample
  *   - 2-finger pinch        → zoom
  *   - 2-finger rotation     → rotate
  *   - 2-finger pan          → translate
  *   - 2-finger tap          → undo (via onTwoFingerTap)
  *   - 3-finger tap          → redo (via onThreeFingerTap)
+ *
+ * Brush behaviour is driven by `activeBrush.kind`:
+ *   - 'path'  → smooth Bézier stroke with strokeWidth=baseSize*sizeMultiplier
+ *               and the brush's opacity / blur.
+ *   - 'stamp' → drop deterministic stamp dots along the trail.
+ *   - 'fill'  → on tap, fill the tapped region (vector pages only).
  */
 export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
   (
@@ -80,11 +99,14 @@ export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
       page,
       size,
       strokes,
+      activeBrush,
       activeColor,
-      brushSize,
-      isErasing,
+      tint,
+      sizeMultiplier,
+      eyedropperActive,
       stayInside,
       onStrokeEnd,
+      onEyedropperSample,
       onTwoFingerTap,
       onThreeFingerTap,
       style,
@@ -92,12 +114,9 @@ export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
     },
     ref,
   ) => {
-    // Stay-inside-lines is only meaningful on vector pages (which have named
-    // region geometry to clip against). Raster pages always paint freely.
+    // Stay-inside-lines is only meaningful on vector pages.
     const effectiveStayInside = page.kind === 'vector' && stayInside;
 
-    // Pre-compile region paths for hit-testing and clipping. Raster pages
-    // have no regions so the maps are empty.
     const regionGeometry = useMemo(
       () => (page.kind === 'vector' ? page.regionGeometry : {}),
       [page],
@@ -112,8 +131,20 @@ export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
       return map;
     }, [compiledRegions]);
 
-    // Logical-coordinate mapping: gesture coords are in detector pixels, the
-    // Skia canvas + SVG share a logical coordinate space (page.width × page.height).
+    // Effective paint colour (tint applied; eraser overrides to paper).
+    const effectiveColor = useMemo(
+      () =>
+        activeBrush.isEraser ? ERASER_COLOR : applyTint(activeColor, tint),
+      [activeBrush.isEraser, activeColor, tint],
+    );
+
+    // Effective stroke width = brush.baseSize * user multiplier.
+    const effectiveSize = useMemo(
+      () => Math.max(1, activeBrush.baseSize * sizeMultiplier),
+      [activeBrush.baseSize, sizeMultiplier],
+    );
+
+    // Logical-coordinate mapping.
     const toLogical = useCallback(
       (px: number, py: number): { x: number; y: number } => ({
         x: (px / size) * page.width,
@@ -167,10 +198,7 @@ export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
       ],
     }));
 
-    // ----- Inverse transform: detector px → canvas px (then logical) -----
-    // This compensates for the user's current zoom/rotate/pan so the brush
-    // lands where their finger visually is, even when the canvas is zoomed
-    // 2x or rotated 45°.
+    // ----- Inverse transform: detector px → canvas px (then logical). -----
     const detectorToCanvas = useCallback(
       (touchX: number, touchY: number): { x: number; y: number } => {
         const tx = translateX.value;
@@ -209,11 +237,14 @@ export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
       color: string;
       sizePx: number;
       mode: 'draw' | 'erase';
+      brushTypeId: string;
+      opacity: number;
     }
     const [draft, setDraft] = useState<Draft | null>(null);
     const draftRef = useRef<Draft | null>(null);
+    const gestureModeRef = useRef<GestureMode>('idle');
 
-    const beginStroke = useCallback(
+    const beginPaintStroke = useCallback(
       (touchX: number, touchY: number) => {
         const { x, y } = detectorToCanvas(touchX, touchY);
         const regionId = effectiveStayInside
@@ -229,32 +260,33 @@ export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
         const next: Draft = {
           points: [{ x, y }],
           regionId,
-          color: isErasing ? PAPER : activeColor,
-          sizePx: brushSize,
-          mode: isErasing ? 'erase' : 'draw',
+          color: effectiveColor,
+          sizePx: effectiveSize,
+          mode: activeBrush.isEraser ? 'erase' : 'draw',
+          brushTypeId: activeBrush.id,
+          opacity: activeBrush.opacity,
         };
         draftRef.current = next;
         setDraft(next);
       },
       [
-        activeColor,
-        brushSize,
+        activeBrush,
         compiledRegions,
         detectorToCanvas,
+        effectiveColor,
+        effectiveSize,
         effectiveStayInside,
-        isErasing,
         regionGeometry,
         page.height,
         page.width,
       ],
     );
 
-    const addPoint = useCallback(
+    const addPointToDraft = useCallback(
       (touchX: number, touchY: number) => {
         const current = draftRef.current;
         if (!current) return;
         const { x, y } = detectorToCanvas(touchX, touchY);
-        // Skip super-close points to avoid jitter and reduce stroke size.
         const last = current.points[current.points.length - 1];
         if (last) {
           const dx = x - last.x;
@@ -271,7 +303,7 @@ export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
       [detectorToCanvas],
     );
 
-    const commitStroke = useCallback(() => {
+    const commitPaintStroke = useCallback(() => {
       const current = draftRef.current;
       if (current && current.points.length > 0) {
         const stroke = createStroke({
@@ -280,12 +312,97 @@ export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
           mode: current.mode,
           regionId: current.regionId,
           points: current.points,
+          brushTypeId: current.brushTypeId,
+          opacity: current.opacity,
         });
         onStrokeEnd(stroke);
       }
       draftRef.current = null;
       setDraft(null);
     }, [onStrokeEnd]);
+
+    const handleBucketTap = useCallback(
+      (touchX: number, touchY: number) => {
+        if (page.kind !== 'vector') return;
+        const { x, y } = detectorToCanvas(touchX, touchY);
+        const regionId = findRegionAt(
+          compiledRegions,
+          regionGeometry,
+          x,
+          y,
+          page.width,
+          page.height,
+        );
+        if (!regionId) return;
+        const stroke = createStroke({
+          color: effectiveColor,
+          size: 0,
+          mode: 'draw',
+          regionId,
+          points: [{ x, y }],
+          brushTypeId: activeBrush.id,
+          opacity: activeBrush.opacity,
+        });
+        onStrokeEnd(stroke);
+      },
+      [
+        activeBrush,
+        compiledRegions,
+        detectorToCanvas,
+        effectiveColor,
+        onStrokeEnd,
+        page,
+        regionGeometry,
+      ],
+    );
+
+    const handleEyedropper = useCallback(
+      (touchX: number, touchY: number) => {
+        if (!onEyedropperSample) return;
+        const { x, y } = detectorToCanvas(touchX, touchY);
+        const sampled = sampleColorAt({ x, y }, strokes, ERASER_COLOR);
+        onEyedropperSample(sampled);
+      },
+      [detectorToCanvas, onEyedropperSample, strokes],
+    );
+
+    // ----- Pointer dispatch (chooses paint / fill / eyedrop on touch begin) -----
+    const handlePointerBegin = useCallback(
+      (touchX: number, touchY: number) => {
+        if (eyedropperActive) {
+          gestureModeRef.current = 'eyedrop';
+          handleEyedropper(touchX, touchY);
+          return;
+        }
+        if (activeBrush.kind === 'fill') {
+          gestureModeRef.current = 'fill';
+          handleBucketTap(touchX, touchY);
+          return;
+        }
+        gestureModeRef.current = 'paint';
+        beginPaintStroke(touchX, touchY);
+      },
+      [
+        activeBrush.kind,
+        beginPaintStroke,
+        eyedropperActive,
+        handleBucketTap,
+        handleEyedropper,
+      ],
+    );
+
+    const handlePointerUpdate = useCallback(
+      (touchX: number, touchY: number) => {
+        if (gestureModeRef.current !== 'paint') return;
+        addPointToDraft(touchX, touchY);
+      },
+      [addPointToDraft],
+    );
+
+    const handlePointerEnd = useCallback(() => {
+      if (gestureModeRef.current === 'paint') commitPaintStroke();
+      gestureModeRef.current = 'idle';
+    }, [commitPaintStroke]);
 
     // ----- Gestures -----
     const brushPan = useMemo(
@@ -294,18 +411,18 @@ export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
           .maxPointers(1)
           .averageTouches(true)
           .onBegin((e) => {
-            runOnJS(beginStroke)(e.x, e.y);
+            runOnJS(handlePointerBegin)(e.x, e.y);
           })
           .onUpdate((e) => {
-            runOnJS(addPoint)(e.x, e.y);
+            runOnJS(handlePointerUpdate)(e.x, e.y);
           })
           .onEnd(() => {
-            runOnJS(commitStroke)();
+            runOnJS(handlePointerEnd)();
           })
           .onFinalize(() => {
-            runOnJS(commitStroke)();
+            runOnJS(handlePointerEnd)();
           }),
-      [beginStroke, addPoint, commitStroke],
+      [handlePointerBegin, handlePointerUpdate, handlePointerEnd],
     );
 
     const pinch = useMemo(
@@ -385,28 +502,53 @@ export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
       [brushPan, threeFingerTap, twoFingerTap, pinch, rotate, transformPan],
     );
 
-    // ----- Render committed strokes as Skia paths -----
-    const committedPaths = useMemo(() => {
-      return strokes.map((stroke) => ({
-        stroke,
-        skPath: pointsToSkPath(stroke.points),
-        clipPath:
-          stroke.regionId && stayInsideClip(stroke, regionPathsById)
-            ? regionPathsById[stroke.regionId]
+    // ----- Render committed strokes -----
+    interface PreparedStroke {
+      stroke: Stroke;
+      pathTrail: SkPath | null;
+      clip: SkPath | null;
+      regionPath: SkPath | null;
+    }
+    const committed = useMemo<PreparedStroke[]>(() => {
+      return strokes.map((stroke) => {
+        const isFill = stroke.brushTypeId === 'bucket';
+        return {
+          stroke,
+          pathTrail: isFill ? null : pointsToSkPath(stroke.points),
+          clip:
+            !isFill && stroke.regionId
+              ? regionPathsById[stroke.regionId] ?? null
+              : null,
+          regionPath: stroke.regionId
+            ? regionPathsById[stroke.regionId] ?? null
             : null,
-      }));
+        };
+      });
     }, [strokes, regionPathsById]);
 
-    // Draft stroke uses the *current* tool settings captured in `draft`.
-    const draftSkPath = useMemo(
+    // Live draft stroke.
+    const draftPathTrail = useMemo(
       () =>
         draft && draft.points.length > 0 ? pointsToSkPath(draft.points) : null,
       [draft],
     );
-    const draftClipPath = useMemo(() => {
+    const draftClip = useMemo(() => {
       if (!draft || !draft.regionId) return null;
       return regionPathsById[draft.regionId] ?? null;
     }, [draft, regionPathsById]);
+    const draftAsStroke = useMemo<Stroke | null>(() => {
+      if (!draft) return null;
+      return {
+        id: 'draft',
+        color: draft.color,
+        size: draft.sizePx,
+        mode: draft.mode,
+        regionId: draft.regionId,
+        points: draft.points,
+        brushTypeId: draft.brushTypeId,
+        opacity: draft.opacity,
+      };
+    }, [draft]);
 
     const containerStyle = useMemo<ViewStyle>(
       () => ({
@@ -425,36 +567,39 @@ export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
               style={[styles.transformLayer, containerStyle, transformStyle]}
               collapsable={false}
             >
-              {/* Paint layer */}
+              {/* Paint layer (Skia). */}
               <Canvas style={[styles.absoluteFill, containerStyle]}>
                 <Group
                   transform={[{ scale: size / page.width }]}
                   origin={{ x: 0, y: 0 }}
                 >
-                  {committedPaths.map(({ stroke, skPath, clipPath }) => (
-                    <StrokePathView
-                      key={stroke.id}
-                      path={skPath}
-                      color={stroke.color}
-                      width={stroke.size}
-                      clip={clipPath}
-                    />
-                  ))}
-                  {draftSkPath && draft ? (
-                    <StrokePathView
-                      path={draftSkPath}
-                      color={draft.color}
-                      width={draft.sizePx}
-                      clip={draftClipPath}
+                  {committed.map(
+                    ({ stroke, pathTrail, clip, regionPath }) => (
+                      <SkiaStrokeView
+                        key={stroke.id}
+                        stroke={stroke}
+                        pathTrail={pathTrail}
+                        clip={clip}
+                        regionPath={regionPath}
+                      />
+                    ),
+                  )}
+                  {draftAsStroke ? (
+                    <SkiaStrokeView
+                      stroke={draftAsStroke}
+                      pathTrail={draftPathTrail}
+                      clip={draftClip}
+                      regionPath={null}
                     />
                   ) : null}
                 </Group>
               </Canvas>
 
-              {/* Outline overlay (transparent fill so paint shows through).
-                 Vector pages render an SVG outline; raster pages render the
-                 baked-in PNG line art. */}
-              <View style={[styles.absoluteFill, containerStyle]} pointerEvents="none">
+              {/* Outline overlay. */}
+              <View
+                style={[styles.absoluteFill, containerStyle]}
+                pointerEvents="none"
+              >
                 {page.kind === 'vector' ? (
                   <Svg
                     width={size}
@@ -491,43 +636,14 @@ export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
 
 BrushCanvas.displayName = 'BrushCanvas';
 
-// Render a stroke as a single Skia <Path> with optional clip.
-const StrokePathView: React.FC<{
-  path: SkPath;
-  color: string;
-  width: number;
-  clip: SkPath | null;
-}> = ({ path, color, width, clip }) => {
-  const inner = (
-    <SkiaPath
-      path={path}
-      color={color}
-      style="stroke"
-      strokeWidth={width}
-      strokeCap="round"
-      strokeJoin="round"
-    />
-  );
-  if (clip) {
-    return (
-      <Group clip={clip}>
-        {inner}
-      </Group>
-    );
-  }
-  return inner;
-};
-
 const pointsToSkPath = (points: StrokePoint[]): SkPath => {
   const path = Skia.Path.Make();
   if (points.length === 0) return path;
   path.moveTo(points[0].x, points[0].y);
   if (points.length === 1) {
-    // Single dot — draw as a tiny line so it renders.
     path.lineTo(points[0].x + 0.01, points[0].y + 0.01);
     return path;
   }
-  // Smooth via quadratic curves through midpoints (better than poly-lines).
   for (let i = 1; i < points.length - 1; i += 1) {
     const cx = points[i].x;
     const cy = points[i].y;
@@ -539,11 +655,6 @@ const pointsToSkPath = (points: StrokePoint[]): SkPath => {
   path.lineTo(last.x, last.y);
   return path;
 };
-
-const stayInsideClip = (
-  stroke: Stroke,
-  regionPaths: Record<string, SkPath>,
-): boolean => stroke.regionId !== null && !!regionPaths[stroke.regionId];
 
 const styles = StyleSheet.create({
   outer: {

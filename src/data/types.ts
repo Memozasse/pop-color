@@ -72,6 +72,14 @@ export interface Stroke {
   mode: StrokeMode;
   regionId: string | null;
   points: StrokePoint[];
+  /**
+   * Brush type that authored this stroke (e.g. 'brush', 'pencil', 'spray',
+   * 'bucket', …). Optional for backward compatibility with V2 strokes that
+   * predate the brush registry — those default to 'brush' on render.
+   */
+  brushTypeId?: string;
+  /** 0..1 alpha multiplier captured at stroke time. Defaults to 1. */
+  opacity?: number;
 }
 
 export interface Artwork {

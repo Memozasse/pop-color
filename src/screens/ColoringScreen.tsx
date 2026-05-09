@@ -1,8 +1,9 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Pressable,
   StyleSheet,
   Text,
   View,
@@ -11,18 +12,27 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrushCanvas, type BrushCanvasHandle } from '@/components/BrushCanvas';
-import { BrushToolbar } from '@/components/BrushToolbar';
-import { ColorPalette } from '@/components/ColorPalette';
+import { BrushPickerModal } from '@/components/BrushPickerModal';
+import { PaintToolbar } from '@/components/PaintToolbar';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { Toolbar, type ToolbarAction } from '@/components/Toolbar';
+import {
+  BRUSHES,
+  DEFAULT_BRUSH_ID,
+  getBrush,
+  type BrushConfig,
+} from '@/data/brushes';
 import { getPage } from '@/data/pages';
 import type { RootStackParamList } from '@/navigation/types';
 import { useArtworksStore } from '@/state/artworksStore';
 import { useBrushStore } from '@/state/brushStore';
-import { colors, spacing, typography } from '@/theme';
+import { colors, radius, spacing, typography } from '@/theme';
 
 type ColoringRoute = RouteProp<RootStackParamList, 'Coloring'>;
 type ColoringNav = NativeStackNavigationProp<RootStackParamList, 'Coloring'>;
+
+const FALLBACK_BRUSH: BrushConfig =
+  getBrush(DEFAULT_BRUSH_ID) ?? BRUSHES[0];
 
 export const ColoringScreen: React.FC = () => {
   const route = useRoute<ColoringRoute>();
@@ -36,14 +46,21 @@ export const ColoringScreen: React.FC = () => {
   const strokes = useBrushStore((s) => s.strokes);
   const redoStack = useBrushStore((s) => s.redoStack);
   const activeColor = useBrushStore((s) => s.activeColor);
-  const brushSize = useBrushStore((s) => s.brushSize);
-  const isErasing = useBrushStore((s) => s.isErasing);
+  const activeBrushId = useBrushStore((s) => s.activeBrushId);
+  const paletteId = useBrushStore((s) => s.paletteId);
+  const tint = useBrushStore((s) => s.tint);
+  const sizeMultiplier = useBrushStore((s) => s.sizeMultiplier);
+  const eyedropperActive = useBrushStore((s) => s.eyedropperActive);
+  const recentColors = useBrushStore((s) => s.recentColors);
   const stayInside = useBrushStore((s) => s.stayInside);
+
   const startPage = useBrushStore((s) => s.startPage);
   const clearPage = useBrushStore((s) => s.clearPage);
   const setActiveColor = useBrushStore((s) => s.setActiveColor);
-  const setBrushSize = useBrushStore((s) => s.setBrushSize);
-  const toggleEraser = useBrushStore((s) => s.toggleEraser);
+  const setActiveBrushId = useBrushStore((s) => s.setActiveBrushId);
+  const setPaletteId = useBrushStore((s) => s.setPaletteId);
+  const setTint = useBrushStore((s) => s.setTint);
+  const setEyedropperActive = useBrushStore((s) => s.setEyedropperActive);
   const toggleStayInside = useBrushStore((s) => s.toggleStayInside);
   const pushStroke = useBrushStore((s) => s.pushStroke);
   const undo = useBrushStore((s) => s.undo);
@@ -55,6 +72,7 @@ export const ColoringScreen: React.FC = () => {
 
   const [persistedArtworkId, setPersistedArtworkId] = useState<string | undefined>(artworkId);
   const [savingState, setSavingState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [pickerVisible, setPickerVisible] = useState(false);
 
   useEffect(() => {
     if (!page) return;
@@ -71,6 +89,24 @@ export const ColoringScreen: React.FC = () => {
       pushStroke(stroke);
     },
     [pushStroke],
+  );
+
+  const handleEyedropperSample = useCallback(
+    (hex: string) => {
+      setActiveColor(hex);
+    },
+    [setActiveColor],
+  );
+
+  // Bucket only makes sense on vector pages (where regions exist).
+  const hiddenBrushIds = useMemo<string[]>(
+    () => (page?.kind === 'raster' ? ['bucket'] : []),
+    [page?.kind],
+  );
+
+  const activeBrush = useMemo<BrushConfig>(
+    () => getBrush(activeBrushId) ?? FALLBACK_BRUSH,
+    [activeBrushId],
   );
 
   if (!page) {
@@ -116,12 +152,12 @@ export const ColoringScreen: React.FC = () => {
     ]);
   };
 
-  const canvasSize = Math.min(width - spacing.lg * 2, height * 0.5);
-
   // Stay-inside-lines is meaningless on raster pages (no regions) — hide the
   // toggle and force-disable clipping.
   const supportsStayInside = page.kind === 'vector';
   const effectiveStayInside = supportsStayInside && stayInside;
+
+  const canvasSize = Math.min(width - spacing.lg * 2, height * 0.45);
 
   const actions: ToolbarAction[] = [
     {
@@ -171,30 +207,62 @@ export const ColoringScreen: React.FC = () => {
           page={page}
           size={canvasSize}
           strokes={strokes}
+          activeBrush={activeBrush}
           activeColor={activeColor}
-          brushSize={brushSize}
-          isErasing={isErasing}
+          tint={tint}
+          sizeMultiplier={sizeMultiplier}
+          eyedropperActive={eyedropperActive}
           stayInside={effectiveStayInside}
           onStrokeEnd={handleStrokeEnd}
+          onEyedropperSample={handleEyedropperSample}
           onTwoFingerTap={undo}
           onThreeFingerTap={redo}
           testID="brush-canvas"
         />
+        {supportsStayInside ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: effectiveStayInside }}
+            accessibilityLabel="Toggle stay inside the lines"
+            onPress={toggleStayInside}
+            style={({ pressed }) => [
+              styles.stayInsideBtn,
+              effectiveStayInside && styles.stayInsideBtnActive,
+              pressed && styles.stayInsidePressed,
+            ]}
+            testID="btn-stay-inside"
+          >
+            <Text style={styles.stayInsideEmoji}>
+              {effectiveStayInside ? '🔒' : '🔓'}
+            </Text>
+            <Text style={styles.stayInsideLabel}>
+              {effectiveStayInside ? 'Inside lines' : 'Free paint'}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
-      <BrushToolbar
-        brushSize={brushSize}
-        isErasing={isErasing}
-        stayInside={effectiveStayInside}
-        onSelectSize={setBrushSize}
-        onToggleEraser={toggleEraser}
-        onToggleStayInside={toggleStayInside}
-        showStayInside={supportsStayInside}
-      />
       <Toolbar actions={actions} />
-      <ColorPalette
+      <PaintToolbar
+        activeBrushId={activeBrushId}
+        paletteId={paletteId}
         activeColor={activeColor}
-        onSelect={setActiveColor}
-        testID="color-palette"
+        tint={tint}
+        recentColors={recentColors}
+        eyedropperActive={eyedropperActive}
+        hiddenBrushIds={hiddenBrushIds}
+        onSelectBrush={setActiveBrushId}
+        onOpenBrushPicker={() => setPickerVisible(true)}
+        onSelectPalette={setPaletteId}
+        onSelectColor={setActiveColor}
+        onTintChange={setTint}
+        onToggleEyedropper={() => setEyedropperActive(!eyedropperActive)}
+      />
+      <BrushPickerModal
+        visible={pickerVisible}
+        activeBrushId={activeBrushId}
+        excludeIds={hiddenBrushIds}
+        onSelect={setActiveBrushId}
+        onClose={() => setPickerVisible(false)}
       />
     </SafeAreaView>
   );
@@ -220,5 +288,34 @@ const styles = StyleSheet.create({
   emptyText: {
     ...typography.body,
     color: colors.textMuted,
+  },
+  stayInsideBtn: {
+    position: 'absolute',
+    top: spacing.md,
+    right: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    borderWidth: 2,
+    borderColor: colors.border,
+  },
+  stayInsideBtnActive: {
+    backgroundColor: colors.brandSoft,
+    borderColor: colors.brand,
+  },
+  stayInsidePressed: {
+    opacity: 0.7,
+  },
+  stayInsideEmoji: {
+    fontSize: 14,
+    marginRight: 4,
+  },
+  stayInsideLabel: {
+    ...typography.caption,
+    color: colors.text,
+    fontWeight: '700',
   },
 });

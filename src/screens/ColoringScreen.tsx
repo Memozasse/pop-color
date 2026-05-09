@@ -20,7 +20,6 @@ import type { RootStackParamList } from '@/navigation/types';
 import { useArtworksStore } from '@/state/artworksStore';
 import { useBrushStore } from '@/state/brushStore';
 import { colors, spacing, typography } from '@/theme';
-import { playPop } from '@/utils/sound';
 
 type ColoringRoute = RouteProp<RootStackParamList, 'Coloring'>;
 type ColoringNav = NativeStackNavigationProp<RootStackParamList, 'Coloring'>;
@@ -70,7 +69,6 @@ export const ColoringScreen: React.FC = () => {
   const handleStrokeEnd = useCallback(
     (stroke: Parameters<typeof pushStroke>[0]) => {
       pushStroke(stroke);
-      void playPop();
     },
     [pushStroke],
   );

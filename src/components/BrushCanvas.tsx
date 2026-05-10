@@ -423,11 +423,15 @@ export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
       () =>
         Gesture.Pan()
           .maxPointers(1)
-          // Activate immediately on touch-down so a tap (e.g. bucket fill or a
-          // tiny brush dot) also paints — without this the gesture only
-          // activates after the user moves their finger.
-          .minDistance(0)
           .averageTouches(true)
+          // NOTE: do not set `.minDistance(0)`. With a 0-distance threshold
+          // brushPan transitions to ACTIVE on first touch-down, which in our
+          // Gesture.Race below would immediately cancel every multi-finger
+          // gesture (pinch / rotate / 2-finger pan / 2- and 3-finger taps).
+          // Single-tap interactions (bucket fill, eyedropper, tiny dots) still
+          // fire because `onBegin` runs on touch-down regardless of activation
+          // and `onFinalize` runs on FAIL, so a stationary tap commits a
+          // 1-point stroke via the same code path as a drag.
           .onBegin((e) => {
             runOnJS(handlePointerBegin)(e.x, e.y);
           })

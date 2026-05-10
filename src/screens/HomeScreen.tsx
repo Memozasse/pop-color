@@ -143,14 +143,6 @@ export const HomeScreen: React.FC = () => {
         {/* ---- "Themes" section header ---- */}
         <View style={styles.themesHeader}>
           <Text style={styles.sectionTitle}>Themes</Text>
-          <Pressable
-            onPress={() => navigation.navigate('Gallery', { themeId: THEMES[0].id })}
-            accessibilityRole="button"
-            accessibilityLabel="View all themes"
-            hitSlop={12}
-          >
-            <Text style={styles.viewAll}>View all</Text>
-          </Pressable>
         </View>
 
         {/* ---- Bento grid: 2-col raspberry tiles, one per theme ---- */}
@@ -366,11 +358,6 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontWeight: '800',
     fontSize: 22,
-  },
-  viewAll: {
-    ...typography.caption,
-    color: colors.brand,
-    fontWeight: '700',
   },
 
   // Bento grid

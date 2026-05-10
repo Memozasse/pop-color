@@ -82,7 +82,9 @@ export const SettingsScreen: React.FC = () => {
             <Text style={styles.emoji}>🎨</Text>
             <View style={styles.text}>
               <Text style={styles.rowTitle}>Pop Color</Text>
-              <Text style={styles.rowDescription}>V1 — A relaxing coloring app for kids.</Text>
+              <Text style={styles.rowDescription}>
+                A relaxing coloring app for everyone.
+              </Text>
             </View>
           </View>
         </View>

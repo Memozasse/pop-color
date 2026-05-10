@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/Button';
+import { PainterKidIllustration } from '@/components/Illustration';
 import { PageThumbnail } from '@/components/PageThumbnail';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { getPage } from '@/data/pages';
@@ -53,10 +54,12 @@ export const MyCreationsScreen: React.FC = () => {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {artworks.length === 0 ? (
           <View style={styles.empty}>
-            <Text style={styles.emptyEmoji}>🎨</Text>
+            <View style={styles.emptyIllus}>
+              <PainterKidIllustration size={180} />
+            </View>
             <Text style={styles.emptyTitle}>No creations yet</Text>
             <Text style={styles.emptyText}>
-              Pick a coloring page and tap to fill — your saved artwork will show up here.
+              Pick a coloring page and start painting — your saved artwork will show up here.
             </Text>
             <Button
               label="Pick a page"
@@ -167,9 +170,10 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xxxl,
     paddingHorizontal: spacing.lg,
   },
-  emptyEmoji: {
-    fontSize: 64,
-    marginBottom: spacing.md,
+  emptyIllus: {
+    marginBottom: spacing.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyTitle: {
     ...typography.title,

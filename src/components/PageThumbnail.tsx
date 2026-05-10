@@ -94,7 +94,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.paperWhite,
     borderRadius: radius.lg,
     overflow: 'hidden',
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: colors.border,
     ...shadow.card,
   },

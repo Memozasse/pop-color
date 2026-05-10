@@ -1,32 +1,44 @@
-// Pop Color UI theme — soft kid-friendly palette for the app chrome
-// (separate from the user-facing coloring palette in src/data/palettes.ts)
+// Pop Color UI theme — "Raspberry Bento" palette.
+//
+// Sampled from the reference design the user shared (meditation-app
+// screenshot). Brand = deep raspberry pink, surfaces are cream-pink, and
+// the periwinkle accent is reserved for the single featured / spotlight
+// card on Home. The user-facing painting swatches live separately in
+// src/data/palettes.ts and are unchanged by this redesign.
 
 export const colors = {
-  // surfaces
-  background: '#FFF7F0',
-  surface: '#FFFFFF',
-  surfaceMuted: '#FFEFE0',
+  // surfaces — cream-pink page bg + warm-white cards in the reference
+  background: '#FCEFEF',
+  surface: '#FFFAF2',
+  surfaceMuted: '#F7E3E7',
 
   // text
-  text: '#2A2540',
+  text: '#1F1B30',
   textMuted: '#6B6485',
   textOnBrand: '#FFFFFF',
 
-  // brand
-  brand: '#FF6FA3',
-  brandDeep: '#E94F8A',
-  brandSoft: '#FFD6E5',
+  // brand — raspberry sampled from the reference hero panel
+  brand: '#C14A68',
+  brandDeep: '#A53450',
+  brandSoft: '#F7D9E1',
 
-  // accents
+  // accent — periwinkle for the single featured card on Home
+  // (matches the "Ready to start your first session" card in the reference).
+  accent: '#8999D5',
+  accentDeep: '#6F7FC2',
+  accentSoft: '#E2E6F4',
+
+  // legacy accent ramp — kept so older screens / components keep compiling
+  // through the migration. Each screen drops these as it's redesigned.
   accentYellow: '#FFD24C',
-  accentBlue: '#6FC1FF',
+  accentBlue: '#8999D5',
   accentGreen: '#7BD389',
   accentPurple: '#B07CFF',
 
   // semantic
-  border: '#F0DFD0',
-  shadow: 'rgba(42, 37, 64, 0.12)',
-  overlay: 'rgba(42, 37, 64, 0.45)',
+  border: '#F0D7DD',
+  shadow: 'rgba(31, 27, 48, 0.10)',
+  overlay: 'rgba(31, 27, 48, 0.45)',
 
   // canvas
   paperWhite: '#FFFFFF',

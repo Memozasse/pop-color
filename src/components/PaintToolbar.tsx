@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -9,6 +9,13 @@ import {
   type LayoutChangeEvent,
   type ViewStyle,
 } from 'react-native';
+import Svg, {
+  Circle,
+  Defs,
+  LinearGradient as SvgLinearGradient,
+  Rect,
+  Stop,
+} from 'react-native-svg';
 
 import {
   BRUSHES,
@@ -18,7 +25,6 @@ import {
 import { PALETTES, type Palette } from '@/data/palettes';
 import { applyTint } from '@/state/brushStore';
 import { colors, radius, shadow, spacing, typography } from '@/theme';
-import { isLight } from '@/utils/brushRender';
 
 import { BrushIcon } from './BrushIcon';
 
@@ -300,59 +306,137 @@ interface TintSliderProps {
 }
 
 /**
- * Lightweight horizontal tint slider. We don't pull in
- * `@react-native-community/slider` — a single Pressable that maps tap/drag x
- * to 0..1 is enough for this UI. The track is split into white / colour /
- * black thirds so the user can see what each end of the slider does.
+ * iOS-premium tint slider. The track is a smooth horizontal gradient
+ * white → baseColor → black driven by SVG (matches `applyTint(t)` exactly).
+ * Six evenly-spaced tick circles sit on top as visual reference points; a
+ * larger circular thumb floats at the exact `value` position and fills with
+ * the current tinted colour. The whole row is interactive — tap or drag to
+ * update value continuously.
  */
+const TINT_TRACK_HEIGHT = 8;
+const TINT_ROW_HEIGHT = 32;
+const TINT_TICK_RADIUS = 5;
+const TINT_THUMB_RADIUS = 11;
+const TINT_TICK_COUNT = 6;
+
 const TintSlider: React.FC<TintSliderProps> = ({
   baseColor,
   value,
   onChange,
 }) => {
-  const trackRef = React.useRef<View>(null);
-  const widthRef = React.useRef<number>(0);
+  const [width, setWidth] = useState(0);
 
   const handleLayout = (e: LayoutChangeEvent) => {
-    widthRef.current = e.nativeEvent.layout.width;
+    setWidth(e.nativeEvent.layout.width);
   };
 
   const updateFromEvent = (e: GestureResponderEvent) => {
-    const w = widthRef.current;
-    if (!w) return;
-    const x = Math.max(0, Math.min(w, e.nativeEvent.locationX));
-    onChange(x / w);
+    if (!width) return;
+    const x = Math.max(0, Math.min(width, e.nativeEvent.locationX));
+    onChange(x / width);
   };
 
-  const lightHalf = applyTint(baseColor, 0);
-  const darkHalf = applyTint(baseColor, 1);
+  const lightEnd = applyTint(baseColor, 0);
+  const midColor = applyTint(baseColor, 0.5);
+  const darkEnd = applyTint(baseColor, 1);
   const thumbColor = applyTint(baseColor, value);
+
+  // Inset the track slightly so the thumb (which can sit at value=0 or =1)
+  // never gets clipped by the row's edge. Tick + thumb positions are then
+  // computed inside the inset region.
+  const inset = TINT_THUMB_RADIUS + 2;
+  const trackWidth = Math.max(0, width - inset * 2);
+  const cy = TINT_ROW_HEIGHT / 2;
+  const trackY = (TINT_ROW_HEIGHT - TINT_TRACK_HEIGHT) / 2;
+  const thumbCx = inset + value * trackWidth;
+
+  // 6 evenly spaced ticks across the track (positions 0/5..5/5).
+  const ticks = useMemo(
+    () =>
+      Array.from({ length: TINT_TICK_COUNT }, (_, i) => i / (TINT_TICK_COUNT - 1)),
+    [],
+  );
 
   return (
     <View style={styles.tintRow}>
       <View
-        ref={trackRef}
         onLayout={handleLayout}
-        style={styles.tintTrack}
+        style={styles.tintHitArea}
         onStartShouldSetResponder={() => true}
         onMoveShouldSetResponder={() => true}
         onResponderGrant={updateFromEvent}
         onResponderMove={updateFromEvent}
       >
-        <View style={[styles.tintSegment, { backgroundColor: lightHalf }]} />
-        <View style={[styles.tintSegment, { backgroundColor: baseColor }]} />
-        <View style={[styles.tintSegment, { backgroundColor: darkHalf }]} />
-        <View
-          pointerEvents="none"
-          style={[
-            styles.tintThumb,
-            {
-              left: `${value * 100}%`,
-              backgroundColor: thumbColor,
-              borderColor: isLight(thumbColor) ? colors.text : colors.surface,
-            },
-          ]}
-        />
+        {width > 0 && (
+          <Svg
+            width={width}
+            height={TINT_ROW_HEIGHT}
+            pointerEvents="none"
+          >
+            <Defs>
+              <SvgLinearGradient
+                id="tintGrad"
+                x1="0"
+                y1="0"
+                x2={trackWidth}
+                y2="0"
+                gradientUnits="userSpaceOnUse"
+              >
+                <Stop offset="0" stopColor={lightEnd} />
+                <Stop offset="0.5" stopColor={midColor} />
+                <Stop offset="1" stopColor={darkEnd} />
+              </SvgLinearGradient>
+            </Defs>
+            {/* Track */}
+            <Rect
+              x={inset}
+              y={trackY}
+              width={trackWidth}
+              height={TINT_TRACK_HEIGHT}
+              rx={TINT_TRACK_HEIGHT / 2}
+              fill="url(#tintGrad)"
+            />
+            {/* Subtle outline so the white end of the gradient is visible on the surface */}
+            <Rect
+              x={inset + 0.5}
+              y={trackY + 0.5}
+              width={trackWidth - 1}
+              height={TINT_TRACK_HEIGHT - 1}
+              rx={(TINT_TRACK_HEIGHT - 1) / 2}
+              fill="none"
+              stroke="rgba(31,27,48,0.08)"
+              strokeWidth={1}
+            />
+            {/* Reference ticks */}
+            {ticks.map((t, i) => (
+              <Circle
+                key={i}
+                cx={inset + t * trackWidth}
+                cy={cy}
+                r={TINT_TICK_RADIUS}
+                fill="rgba(255,255,255,0.95)"
+                stroke="rgba(31,27,48,0.18)"
+                strokeWidth={1}
+              />
+            ))}
+            {/* Thumb shadow */}
+            <Circle
+              cx={thumbCx}
+              cy={cy + 1.5}
+              r={TINT_THUMB_RADIUS}
+              fill="rgba(31,27,48,0.18)"
+            />
+            {/* Thumb */}
+            <Circle
+              cx={thumbCx}
+              cy={cy}
+              r={TINT_THUMB_RADIUS}
+              fill={thumbColor}
+              stroke="#FFFFFF"
+              strokeWidth={2.5}
+            />
+          </Svg>
+        )}
       </View>
     </View>
   );
@@ -424,27 +508,10 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     marginBottom: spacing.sm,
   },
-  tintTrack: {
-    flexDirection: 'row',
-    height: 22,
-    borderRadius: 11,
-    overflow: 'visible',
-    backgroundColor: colors.border,
-    position: 'relative',
-  },
-  tintSegment: {
-    flex: 1,
-    height: '100%',
-  },
-  tintThumb: {
-    position: 'absolute',
-    top: -3,
-    width: 28,
-    height: 28,
-    marginLeft: -14,
-    borderRadius: 14,
-    borderWidth: 3,
-    ...shadow.button,
+  tintHitArea: {
+    width: '100%',
+    height: TINT_ROW_HEIGHT,
+    justifyContent: 'center',
   },
   swatchesScroll: {
     paddingVertical: spacing.xs,

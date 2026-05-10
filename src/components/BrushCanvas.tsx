@@ -144,6 +144,34 @@ export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
       [activeBrush.baseSize, sizeMultiplier],
     );
 
+    // ----- Stable refs for paint settings -----
+    // The Pan gesture's worklet callbacks fire on the UI thread and call back
+    // into JS via runOnJS. Recreating those callbacks on every render (because
+    // a parent state value like `strokes` changed) thrashes the GestureDetector
+    // — it has to re-bind every time, which on Android can drop subsequent
+    // touch sequences. By stashing the live values in refs, we can keep the
+    // gesture handlers' identities stable across renders.
+    const settingsRef = useRef({
+      activeBrush,
+      effectiveColor,
+      effectiveSize,
+      effectiveStayInside,
+      eyedropperActive,
+      strokes,
+      onStrokeEnd,
+      onEyedropperSample,
+    });
+    settingsRef.current = {
+      activeBrush,
+      effectiveColor,
+      effectiveSize,
+      effectiveStayInside,
+      eyedropperActive,
+      strokes,
+      onStrokeEnd,
+      onEyedropperSample,
+    };
+
     // Logical-coordinate mapping.
     const toLogical = useCallback(
       (px: number, py: number): { x: number; y: number } => ({
@@ -246,8 +274,9 @@ export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
 
     const beginPaintStroke = useCallback(
       (touchX: number, touchY: number) => {
+        const s = settingsRef.current;
         const { x, y } = detectorToCanvas(touchX, touchY);
-        const regionId = effectiveStayInside
+        const regionId = s.effectiveStayInside
           ? findRegionAt(
               compiledRegions,
               regionGeometry,
@@ -260,22 +289,18 @@ export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
         const next: Draft = {
           points: [{ x, y }],
           regionId,
-          color: effectiveColor,
-          sizePx: effectiveSize,
-          mode: activeBrush.isEraser ? 'erase' : 'draw',
-          brushTypeId: activeBrush.id,
-          opacity: activeBrush.opacity,
+          color: s.effectiveColor,
+          sizePx: s.effectiveSize,
+          mode: s.activeBrush.isEraser ? 'erase' : 'draw',
+          brushTypeId: s.activeBrush.id,
+          opacity: s.activeBrush.opacity,
         };
         draftRef.current = next;
         setDraft(next);
       },
       [
-        activeBrush,
         compiledRegions,
         detectorToCanvas,
-        effectiveColor,
-        effectiveSize,
-        effectiveStayInside,
         regionGeometry,
         page.height,
         page.width,
@@ -315,15 +340,16 @@ export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
           brushTypeId: current.brushTypeId,
           opacity: current.opacity,
         });
-        onStrokeEnd(stroke);
+        settingsRef.current.onStrokeEnd(stroke);
       }
       draftRef.current = null;
       setDraft(null);
-    }, [onStrokeEnd]);
+    }, []);
 
     const handleBucketTap = useCallback(
       (touchX: number, touchY: number) => {
         if (page.kind !== 'vector') return;
+        const s = settingsRef.current;
         const { x, y } = detectorToCanvas(touchX, touchY);
         const regionId = findRegionAt(
           compiledRegions,
@@ -335,46 +361,40 @@ export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
         );
         if (!regionId) return;
         const stroke = createStroke({
-          color: effectiveColor,
+          color: s.effectiveColor,
           size: 0,
           mode: 'draw',
           regionId,
           points: [{ x, y }],
-          brushTypeId: activeBrush.id,
-          opacity: activeBrush.opacity,
+          brushTypeId: s.activeBrush.id,
+          opacity: s.activeBrush.opacity,
         });
-        onStrokeEnd(stroke);
+        s.onStrokeEnd(stroke);
       },
-      [
-        activeBrush,
-        compiledRegions,
-        detectorToCanvas,
-        effectiveColor,
-        onStrokeEnd,
-        page,
-        regionGeometry,
-      ],
+      [compiledRegions, detectorToCanvas, page, regionGeometry],
     );
 
     const handleEyedropper = useCallback(
       (touchX: number, touchY: number) => {
-        if (!onEyedropperSample) return;
+        const s = settingsRef.current;
+        if (!s.onEyedropperSample) return;
         const { x, y } = detectorToCanvas(touchX, touchY);
-        const sampled = sampleColorAt({ x, y }, strokes, ERASER_COLOR);
-        onEyedropperSample(sampled);
+        const sampled = sampleColorAt({ x, y }, s.strokes, ERASER_COLOR);
+        s.onEyedropperSample(sampled);
       },
-      [detectorToCanvas, onEyedropperSample, strokes],
+      [detectorToCanvas],
     );
 
     // ----- Pointer dispatch (chooses paint / fill / eyedrop on touch begin) -----
     const handlePointerBegin = useCallback(
       (touchX: number, touchY: number) => {
-        if (eyedropperActive) {
+        const s = settingsRef.current;
+        if (s.eyedropperActive) {
           gestureModeRef.current = 'eyedrop';
           handleEyedropper(touchX, touchY);
           return;
         }
-        if (activeBrush.kind === 'fill') {
+        if (s.activeBrush.kind === 'fill') {
           gestureModeRef.current = 'fill';
           handleBucketTap(touchX, touchY);
           return;
@@ -382,13 +402,7 @@ export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
         gestureModeRef.current = 'paint';
         beginPaintStroke(touchX, touchY);
       },
-      [
-        activeBrush.kind,
-        beginPaintStroke,
-        eyedropperActive,
-        handleBucketTap,
-        handleEyedropper,
-      ],
+      [beginPaintStroke, handleBucketTap, handleEyedropper],
     );
 
     const handlePointerUpdate = useCallback(
@@ -410,6 +424,14 @@ export const BrushCanvas = forwardRef<BrushCanvasHandle, BrushCanvasProps>(
         Gesture.Pan()
           .maxPointers(1)
           .averageTouches(true)
+          // NOTE: do not set `.minDistance(0)`. With a 0-distance threshold
+          // brushPan transitions to ACTIVE on first touch-down, which in our
+          // Gesture.Race below would immediately cancel every multi-finger
+          // gesture (pinch / rotate / 2-finger pan / 2- and 3-finger taps).
+          // Single-tap interactions (bucket fill, eyedropper, tiny dots) still
+          // fire because `onBegin` runs on touch-down regardless of activation
+          // and `onFinalize` runs on FAIL, so a stationary tap commits a
+          // 1-point stroke via the same code path as a drag.
           .onBegin((e) => {
             runOnJS(handlePointerBegin)(e.x, e.y);
           })

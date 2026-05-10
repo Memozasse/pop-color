@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -9,6 +9,13 @@ import {
   type LayoutChangeEvent,
   type ViewStyle,
 } from 'react-native';
+import Svg, {
+  Circle,
+  Defs,
+  LinearGradient as SvgLinearGradient,
+  Rect,
+  Stop,
+} from 'react-native-svg';
 
 import {
   BRUSHES,
@@ -18,7 +25,8 @@ import {
 import { PALETTES, type Palette } from '@/data/palettes';
 import { applyTint } from '@/state/brushStore';
 import { colors, radius, shadow, spacing, typography } from '@/theme';
-import { isLight } from '@/utils/brushRender';
+
+import { BrushIcon } from './BrushIcon';
 
 interface PaintToolbarProps {
   /** Current brush registry id (e.g. 'brush'). */
@@ -97,6 +105,13 @@ export const PaintToolbar: React.FC<PaintToolbarProps> = ({
     onSelectPalette(PALETTES[i].id);
   };
 
+  // The "active paint colour" the icons should pick up on their tip / bristle
+  // is the *current* swatch (pre-tint). Erasers are a special case: tinting
+  // their bristle with the active colour would be misleading since the eraser
+  // doesn't paint that colour, so we render its band in pink as designed in
+  // the icon and ignore activeColor here.
+  const iconPaintColor = activeColor;
+
   return (
     <View style={[styles.panel, style]}>
       {/* Row 1: Tools quick-access */}
@@ -109,9 +124,10 @@ export const PaintToolbar: React.FC<PaintToolbarProps> = ({
           {quickBrushes.map((b) => (
             <ToolTile
               key={b.id}
-              emoji={b.emoji}
+              brushId={b.id}
               label={b.label}
               active={b.id === activeBrushId}
+              paintColor={iconPaintColor}
               onPress={() => onSelectBrush(b.id)}
               testID={`tool-${b.id}`}
             />
@@ -123,7 +139,7 @@ export const PaintToolbar: React.FC<PaintToolbarProps> = ({
           onPress={onOpenBrushPicker}
           style={({ pressed }) => [
             styles.moreBtn,
-            pressed && styles.tilePressed,
+            pressed && styles.moreBtnPressed,
           ]}
           testID="tool-more"
         >
@@ -204,7 +220,12 @@ export const PaintToolbar: React.FC<PaintToolbarProps> = ({
           ]}
           testID="tool-eyedropper"
         >
-          <Text style={styles.eyedropperEmoji}>💧</Text>
+          <BrushIcon
+            brushId="eyedropper"
+            size={32}
+            paintColor={activeColor}
+            shadow={false}
+          />
         </Pressable>
 
         <View style={styles.recentRow}>
@@ -227,12 +248,13 @@ export const PaintToolbar: React.FC<PaintToolbarProps> = ({
 // ---- Sub-components --------------------------------------------------------
 
 const ToolTile: React.FC<{
-  emoji: string;
+  brushId: string;
   label: string;
   active: boolean;
+  paintColor: string;
   onPress: () => void;
   testID?: string;
-}> = ({ emoji, label, active, onPress, testID }) => (
+}> = ({ brushId, label, active, paintColor, onPress, testID }) => (
   <Pressable
     accessibilityRole="button"
     accessibilityState={{ selected: active }}
@@ -245,7 +267,12 @@ const ToolTile: React.FC<{
     ]}
     testID={testID}
   >
-    <Text style={styles.tileEmoji}>{emoji}</Text>
+    <BrushIcon
+      brushId={brushId}
+      size={42}
+      paintColor={paintColor}
+      shadow={false}
+    />
   </Pressable>
 );
 
@@ -279,59 +306,137 @@ interface TintSliderProps {
 }
 
 /**
- * Lightweight horizontal tint slider. We don't pull in
- * `@react-native-community/slider` — a single Pressable that maps tap/drag x
- * to 0..1 is enough for this UI. The track is split into white / colour /
- * black thirds so the user can see what each end of the slider does.
+ * iOS-premium tint slider. The track is a smooth horizontal gradient
+ * white → baseColor → black driven by SVG (matches `applyTint(t)` exactly).
+ * Six evenly-spaced tick circles sit on top as visual reference points; a
+ * larger circular thumb floats at the exact `value` position and fills with
+ * the current tinted colour. The whole row is interactive — tap or drag to
+ * update value continuously.
  */
+const TINT_TRACK_HEIGHT = 8;
+const TINT_ROW_HEIGHT = 32;
+const TINT_TICK_RADIUS = 5;
+const TINT_THUMB_RADIUS = 11;
+const TINT_TICK_COUNT = 6;
+
 const TintSlider: React.FC<TintSliderProps> = ({
   baseColor,
   value,
   onChange,
 }) => {
-  const trackRef = React.useRef<View>(null);
-  const widthRef = React.useRef<number>(0);
+  const [width, setWidth] = useState(0);
 
   const handleLayout = (e: LayoutChangeEvent) => {
-    widthRef.current = e.nativeEvent.layout.width;
+    setWidth(e.nativeEvent.layout.width);
   };
 
   const updateFromEvent = (e: GestureResponderEvent) => {
-    const w = widthRef.current;
-    if (!w) return;
-    const x = Math.max(0, Math.min(w, e.nativeEvent.locationX));
-    onChange(x / w);
+    if (!width) return;
+    const x = Math.max(0, Math.min(width, e.nativeEvent.locationX));
+    onChange(x / width);
   };
 
-  const lightHalf = applyTint(baseColor, 0);
-  const darkHalf = applyTint(baseColor, 1);
+  const lightEnd = applyTint(baseColor, 0);
+  const midColor = applyTint(baseColor, 0.5);
+  const darkEnd = applyTint(baseColor, 1);
   const thumbColor = applyTint(baseColor, value);
+
+  // Inset the track slightly so the thumb (which can sit at value=0 or =1)
+  // never gets clipped by the row's edge. Tick + thumb positions are then
+  // computed inside the inset region.
+  const inset = TINT_THUMB_RADIUS + 2;
+  const trackWidth = Math.max(0, width - inset * 2);
+  const cy = TINT_ROW_HEIGHT / 2;
+  const trackY = (TINT_ROW_HEIGHT - TINT_TRACK_HEIGHT) / 2;
+  const thumbCx = inset + value * trackWidth;
+
+  // 6 evenly spaced ticks across the track (positions 0/5..5/5).
+  const ticks = useMemo(
+    () =>
+      Array.from({ length: TINT_TICK_COUNT }, (_, i) => i / (TINT_TICK_COUNT - 1)),
+    [],
+  );
 
   return (
     <View style={styles.tintRow}>
       <View
-        ref={trackRef}
         onLayout={handleLayout}
-        style={styles.tintTrack}
+        style={styles.tintHitArea}
         onStartShouldSetResponder={() => true}
         onMoveShouldSetResponder={() => true}
         onResponderGrant={updateFromEvent}
         onResponderMove={updateFromEvent}
       >
-        <View style={[styles.tintSegment, { backgroundColor: lightHalf }]} />
-        <View style={[styles.tintSegment, { backgroundColor: baseColor }]} />
-        <View style={[styles.tintSegment, { backgroundColor: darkHalf }]} />
-        <View
-          pointerEvents="none"
-          style={[
-            styles.tintThumb,
-            {
-              left: `${value * 100}%`,
-              backgroundColor: thumbColor,
-              borderColor: isLight(thumbColor) ? colors.text : colors.surface,
-            },
-          ]}
-        />
+        {width > 0 && (
+          <Svg
+            width={width}
+            height={TINT_ROW_HEIGHT}
+            pointerEvents="none"
+          >
+            <Defs>
+              <SvgLinearGradient
+                id="tintGrad"
+                x1="0"
+                y1="0"
+                x2={trackWidth}
+                y2="0"
+                gradientUnits="userSpaceOnUse"
+              >
+                <Stop offset="0" stopColor={lightEnd} />
+                <Stop offset="0.5" stopColor={midColor} />
+                <Stop offset="1" stopColor={darkEnd} />
+              </SvgLinearGradient>
+            </Defs>
+            {/* Track */}
+            <Rect
+              x={inset}
+              y={trackY}
+              width={trackWidth}
+              height={TINT_TRACK_HEIGHT}
+              rx={TINT_TRACK_HEIGHT / 2}
+              fill="url(#tintGrad)"
+            />
+            {/* Subtle outline so the white end of the gradient is visible on the surface */}
+            <Rect
+              x={inset + 0.5}
+              y={trackY + 0.5}
+              width={trackWidth - 1}
+              height={TINT_TRACK_HEIGHT - 1}
+              rx={(TINT_TRACK_HEIGHT - 1) / 2}
+              fill="none"
+              stroke="rgba(31,27,48,0.08)"
+              strokeWidth={1}
+            />
+            {/* Reference ticks */}
+            {ticks.map((t, i) => (
+              <Circle
+                key={i}
+                cx={inset + t * trackWidth}
+                cy={cy}
+                r={TINT_TICK_RADIUS}
+                fill="rgba(255,255,255,0.95)"
+                stroke="rgba(31,27,48,0.18)"
+                strokeWidth={1}
+              />
+            ))}
+            {/* Thumb shadow */}
+            <Circle
+              cx={thumbCx}
+              cy={cy + 1.5}
+              r={TINT_THUMB_RADIUS}
+              fill="rgba(31,27,48,0.18)"
+            />
+            {/* Thumb */}
+            <Circle
+              cx={thumbCx}
+              cy={cy}
+              r={TINT_THUMB_RADIUS}
+              fill={thumbColor}
+              stroke="#FFFFFF"
+              strokeWidth={2.5}
+            />
+          </Svg>
+        )}
       </View>
     </View>
   );
@@ -340,13 +445,13 @@ const TintSlider: React.FC<TintSliderProps> = ({
 // ---- Styles ---------------------------------------------------------------
 
 const SWATCH_SIZE = 36;
-const TILE_SIZE = 52;
+const TILE_SIZE = 56;
 
 const styles = StyleSheet.create({
   panel: {
     backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
+    borderTopLeftRadius: radius.xl + 4,
+    borderTopRightRadius: radius.xl + 4,
     paddingHorizontal: spacing.md,
     paddingTop: spacing.md,
     paddingBottom: spacing.md,
@@ -364,12 +469,12 @@ const styles = StyleSheet.create({
   tile: {
     width: TILE_SIZE,
     height: TILE_SIZE,
-    borderRadius: radius.md,
+    borderRadius: radius.md + 2,
     backgroundColor: colors.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.sm,
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: 'transparent',
   },
   tileActive: {
@@ -377,51 +482,36 @@ const styles = StyleSheet.create({
     borderColor: colors.brand,
   },
   tilePressed: {
-    opacity: 0.7,
-  },
-  tileEmoji: {
-    fontSize: 26,
+    opacity: 0.85,
+    transform: [{ scale: 0.95 }],
   },
   moreBtn: {
     width: TILE_SIZE,
     height: TILE_SIZE,
-    borderRadius: radius.md,
+    borderRadius: radius.md + 2,
     backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
     ...shadow.button,
   },
+  moreBtnPressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.95 }],
+  },
   moreEmoji: {
-    fontSize: 28,
+    fontSize: 30,
     color: colors.textOnBrand,
     fontWeight: '700',
-    lineHeight: 30,
+    lineHeight: 32,
   },
   tintRow: {
     paddingVertical: spacing.xs,
     marginBottom: spacing.sm,
   },
-  tintTrack: {
-    flexDirection: 'row',
-    height: 22,
-    borderRadius: 11,
-    overflow: 'visible',
-    backgroundColor: colors.border,
-    position: 'relative',
-  },
-  tintSegment: {
-    flex: 1,
-    height: '100%',
-  },
-  tintThumb: {
-    position: 'absolute',
-    top: -3,
-    width: 28,
-    height: 28,
-    marginLeft: -14,
-    borderRadius: 14,
-    borderWidth: 3,
-    ...shadow.button,
+  tintHitArea: {
+    width: '100%',
+    height: TINT_ROW_HEIGHT,
+    justifyContent: 'center',
   },
   swatchesScroll: {
     paddingVertical: spacing.xs,
@@ -481,21 +571,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   eyedropperBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: colors.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: 'transparent',
   },
   eyedropperBtnActive: {
     backgroundColor: colors.brandSoft,
     borderColor: colors.brand,
-  },
-  eyedropperEmoji: {
-    fontSize: 18,
   },
   recentRow: {
     flex: 1,

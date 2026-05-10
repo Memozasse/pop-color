@@ -260,6 +260,7 @@ export const ColoringScreen: React.FC = () => {
       <BrushPickerModal
         visible={pickerVisible}
         activeBrushId={activeBrushId}
+        activePaintColor={activeColor}
         excludeIds={hiddenBrushIds}
         onSelect={setActiveBrushId}
         onClose={() => setPickerVisible(false)}

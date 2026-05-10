@@ -16,9 +16,13 @@ import {
 } from '@/data/brushes';
 import { colors, radius, shadow, spacing, typography } from '@/theme';
 
+import { BrushIcon } from './BrushIcon';
+
 interface BrushPickerModalProps {
   visible: boolean;
   activeBrushId: string;
+  /** Active paint colour to tint each brush's "business end" in its icon. */
+  activePaintColor?: string;
   /** Hide brushes that don't apply on the current page (e.g. Bucket on raster). */
   excludeIds?: string[];
   onSelect: (brushId: string) => void;
@@ -27,16 +31,36 @@ interface BrushPickerModalProps {
 
 const COLUMNS = 3;
 
+/** One-line iOS-Settings-style hint shown under each brush label. */
+const BRUSH_HINTS: Record<string, string> = {
+  eraser: 'Lift colour off the page',
+  bucket: 'Fill a whole region',
+  brush: 'Smooth, even strokes',
+  'big-brush': 'Cover large areas fast',
+  pencil: 'Crisp, light pencil lines',
+  marker: 'Bold, opaque marker',
+  'tech-pen': 'Sharp, fine ink lines',
+  'ball-pen': 'Everyday ballpoint',
+  watercolor: 'Soft, translucent washes',
+  airbrush: 'Misty, soft-edged spray',
+  spray: 'Coarse, gritty spray',
+  pastel: 'Soft, dusty pastel',
+  splatter: 'Random paint splash',
+};
+
 /**
- * Full-screen brush picker. Shows every brush in {@link BRUSH_PICKER_ORDER}
- * as a 3-column grid of round tiles with the brush emoji and label. Tapping
- * a tile selects the brush and dismisses the modal. Brushes listed in
- * `excludeIds` are hidden (used to drop Bucket on raster pages where there
- * are no regions to fill).
+ * iOS-premium brush picker. Bottom-sheet card with a grab handle, a big
+ * heading + subtitle, and a 3-column grid of hand-authored vector icons
+ * (one per brush) plus a one-line hint describing what each tool does.
+ *
+ * Tapping a tile selects the brush and dismisses the modal. Brushes
+ * listed in `excludeIds` are hidden (used to drop Bucket on raster pages
+ * where there are no regions to fill).
  */
 export const BrushPickerModal: React.FC<BrushPickerModalProps> = ({
   visible,
   activeBrushId,
+  activePaintColor = colors.brand,
   excludeIds = [],
   onSelect,
   onClose,
@@ -59,7 +83,10 @@ export const BrushPickerModal: React.FC<BrushPickerModalProps> = ({
         <SafeAreaView edges={['bottom']} style={styles.sheet}>
           <View style={styles.handle} />
           <View style={styles.headerRow}>
-            <Text style={styles.title}>Brushes</Text>
+            <View>
+              <Text style={styles.title}>Brushes</Text>
+              <Text style={styles.subtitle}>Pick a tool to paint with</Text>
+            </View>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Close brush picker"
@@ -96,7 +123,13 @@ export const BrushPickerModal: React.FC<BrushPickerModalProps> = ({
                   ]}
                   testID={`brush-tile-${b.id}`}
                 >
-                  <Text style={styles.tileEmoji}>{b.emoji}</Text>
+                  <View style={styles.tileIconBox}>
+                    <BrushIcon
+                      brushId={b.id}
+                      size={64}
+                      paintColor={activePaintColor}
+                    />
+                  </View>
                   <Text
                     style={[
                       styles.tileLabel,
@@ -105,6 +138,9 @@ export const BrushPickerModal: React.FC<BrushPickerModalProps> = ({
                     numberOfLines={1}
                   >
                     {b.label}
+                  </Text>
+                  <Text style={styles.tileHint} numberOfLines={1}>
+                    {BRUSH_HINTS[b.id] ?? ''}
                   </Text>
                 </Pressable>
               );
@@ -124,18 +160,18 @@ const styles = StyleSheet.create({
   },
   sheet: {
     backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
+    borderTopLeftRadius: radius.xl + 8,
+    borderTopRightRadius: radius.xl + 8,
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.lg,
-    maxHeight: '80%',
+    maxHeight: '86%',
     ...shadow.card,
   },
   handle: {
     alignSelf: 'center',
     width: 44,
-    height: 4,
-    borderRadius: 2,
+    height: 5,
+    borderRadius: 3,
     backgroundColor: colors.border,
     marginTop: spacing.sm,
     marginBottom: spacing.md,
@@ -144,11 +180,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.md,
+    marginBottom: spacing.lg,
   },
   title: {
     ...typography.heading,
     color: colors.text,
+    fontSize: 28,
+    fontWeight: '700',
+    letterSpacing: -0.4,
+  },
+  subtitle: {
+    ...typography.caption,
+    color: colors.textMuted,
+    marginTop: 2,
   },
   closeBtn: {
     width: 36,
@@ -174,32 +218,49 @@ const styles = StyleSheet.create({
   },
   tile: {
     width: `${100 / COLUMNS - 2}%`,
-    aspectRatio: 1,
+    aspectRatio: 0.92,
     backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.lg,
+    borderRadius: radius.lg + 4,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
+    paddingTop: spacing.md,
+    paddingHorizontal: spacing.xs,
     marginBottom: spacing.md,
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: 'transparent',
+    ...shadow.card,
   },
   tileActive: {
     backgroundColor: colors.brandSoft,
     borderColor: colors.brand,
   },
   tilePressed: {
-    opacity: 0.85,
+    opacity: 0.9,
+    transform: [{ scale: 0.97 }],
   },
-  tileEmoji: {
-    fontSize: 38,
+  tileIconBox: {
+    width: 64,
+    height: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: spacing.xs,
   },
   tileLabel: {
-    ...typography.caption,
+    ...typography.body,
     color: colors.text,
+    fontWeight: '600',
+    fontSize: 14,
+    letterSpacing: -0.1,
   },
   tileLabelActive: {
     color: colors.brandDeep,
     fontWeight: '700',
+  },
+  tileHint: {
+    ...typography.caption,
+    color: colors.textMuted,
+    fontSize: 10.5,
+    marginTop: 1,
+    textAlign: 'center',
   },
 });

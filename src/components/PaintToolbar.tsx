@@ -20,6 +20,8 @@ import { applyTint } from '@/state/brushStore';
 import { colors, radius, shadow, spacing, typography } from '@/theme';
 import { isLight } from '@/utils/brushRender';
 
+import { BrushIcon } from './BrushIcon';
+
 interface PaintToolbarProps {
   /** Current brush registry id (e.g. 'brush'). */
   activeBrushId: string;
@@ -97,6 +99,13 @@ export const PaintToolbar: React.FC<PaintToolbarProps> = ({
     onSelectPalette(PALETTES[i].id);
   };
 
+  // The "active paint colour" the icons should pick up on their tip / bristle
+  // is the *current* swatch (pre-tint). Erasers are a special case: tinting
+  // their bristle with the active colour would be misleading since the eraser
+  // doesn't paint that colour, so we render its band in pink as designed in
+  // the icon and ignore activeColor here.
+  const iconPaintColor = activeColor;
+
   return (
     <View style={[styles.panel, style]}>
       {/* Row 1: Tools quick-access */}
@@ -109,9 +118,10 @@ export const PaintToolbar: React.FC<PaintToolbarProps> = ({
           {quickBrushes.map((b) => (
             <ToolTile
               key={b.id}
-              emoji={b.emoji}
+              brushId={b.id}
               label={b.label}
               active={b.id === activeBrushId}
+              paintColor={iconPaintColor}
               onPress={() => onSelectBrush(b.id)}
               testID={`tool-${b.id}`}
             />
@@ -123,7 +133,7 @@ export const PaintToolbar: React.FC<PaintToolbarProps> = ({
           onPress={onOpenBrushPicker}
           style={({ pressed }) => [
             styles.moreBtn,
-            pressed && styles.tilePressed,
+            pressed && styles.moreBtnPressed,
           ]}
           testID="tool-more"
         >
@@ -204,7 +214,12 @@ export const PaintToolbar: React.FC<PaintToolbarProps> = ({
           ]}
           testID="tool-eyedropper"
         >
-          <Text style={styles.eyedropperEmoji}>💧</Text>
+          <BrushIcon
+            brushId="eyedropper"
+            size={32}
+            paintColor={activeColor}
+            shadow={false}
+          />
         </Pressable>
 
         <View style={styles.recentRow}>
@@ -227,12 +242,13 @@ export const PaintToolbar: React.FC<PaintToolbarProps> = ({
 // ---- Sub-components --------------------------------------------------------
 
 const ToolTile: React.FC<{
-  emoji: string;
+  brushId: string;
   label: string;
   active: boolean;
+  paintColor: string;
   onPress: () => void;
   testID?: string;
-}> = ({ emoji, label, active, onPress, testID }) => (
+}> = ({ brushId, label, active, paintColor, onPress, testID }) => (
   <Pressable
     accessibilityRole="button"
     accessibilityState={{ selected: active }}
@@ -245,7 +261,12 @@ const ToolTile: React.FC<{
     ]}
     testID={testID}
   >
-    <Text style={styles.tileEmoji}>{emoji}</Text>
+    <BrushIcon
+      brushId={brushId}
+      size={42}
+      paintColor={paintColor}
+      shadow={false}
+    />
   </Pressable>
 );
 
@@ -340,13 +361,13 @@ const TintSlider: React.FC<TintSliderProps> = ({
 // ---- Styles ---------------------------------------------------------------
 
 const SWATCH_SIZE = 36;
-const TILE_SIZE = 52;
+const TILE_SIZE = 56;
 
 const styles = StyleSheet.create({
   panel: {
     backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
+    borderTopLeftRadius: radius.xl + 4,
+    borderTopRightRadius: radius.xl + 4,
     paddingHorizontal: spacing.md,
     paddingTop: spacing.md,
     paddingBottom: spacing.md,
@@ -364,12 +385,12 @@ const styles = StyleSheet.create({
   tile: {
     width: TILE_SIZE,
     height: TILE_SIZE,
-    borderRadius: radius.md,
+    borderRadius: radius.md + 2,
     backgroundColor: colors.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.sm,
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: 'transparent',
   },
   tileActive: {
@@ -377,25 +398,27 @@ const styles = StyleSheet.create({
     borderColor: colors.brand,
   },
   tilePressed: {
-    opacity: 0.7,
-  },
-  tileEmoji: {
-    fontSize: 26,
+    opacity: 0.85,
+    transform: [{ scale: 0.95 }],
   },
   moreBtn: {
     width: TILE_SIZE,
     height: TILE_SIZE,
-    borderRadius: radius.md,
+    borderRadius: radius.md + 2,
     backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
     ...shadow.button,
   },
+  moreBtnPressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.95 }],
+  },
   moreEmoji: {
-    fontSize: 28,
+    fontSize: 30,
     color: colors.textOnBrand,
     fontWeight: '700',
-    lineHeight: 30,
+    lineHeight: 32,
   },
   tintRow: {
     paddingVertical: spacing.xs,
@@ -481,21 +504,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   eyedropperBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: colors.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: 'transparent',
   },
   eyedropperBtnActive: {
     backgroundColor: colors.brandSoft,
     borderColor: colors.brand,
-  },
-  eyedropperEmoji: {
-    fontSize: 18,
   },
   recentRow: {
     flex: 1,

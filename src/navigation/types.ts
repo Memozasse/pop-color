@@ -1,4 +1,5 @@
 export type RootStackParamList = {
+  Welcome: undefined;
   Onboarding: undefined;
   Home: undefined;
   Gallery: { themeId: string };

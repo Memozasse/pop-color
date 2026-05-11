@@ -67,14 +67,12 @@ export const WelcomeScreen: React.FC = () => {
       </View>
 
       <View style={styles.content}>
-        <View style={styles.mascotWrap}>
-          <Image
-            source={require('../../assets/lion-painter.png')}
-            style={styles.mascot}
-            resizeMode="contain"
-            accessibilityIgnoresInvertColors
-          />
-        </View>
+        <Image
+          source={require('../../assets/lion-painter.png')}
+          style={styles.mascot}
+          resizeMode="contain"
+          accessibilityIgnoresInvertColors
+        />
 
         <Text style={styles.brand}>Pop Color</Text>
         <Text style={styles.tagline}>
@@ -121,16 +119,13 @@ const styles = StyleSheet.create({
     width: '100%',
     position: 'relative',
   },
-  mascotWrap: {
-    width: 240,
-    height: 240,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.xl,
-  },
   mascot: {
-    width: '100%',
-    height: '100%',
+    // The PNG is roughly 1181x1650 (taller than wide). Lock the width and
+    // let `aspectRatio` drive height so the lion renders large and crisp
+    // on every screen size without any white border.
+    width: 300,
+    aspectRatio: 1181 / 1650,
+    marginBottom: spacing.lg,
   },
   brand: {
     ...typography.title,

@@ -1,11 +1,12 @@
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React from 'react';
-import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ScreenHeader } from '@/components/ScreenHeader';
 import type { RootStackParamList } from '@/navigation/types';
+import { useAudienceStore } from '@/state/audienceStore';
 import { useSettingsStore } from '@/state/settingsStore';
 import { colors, radius, shadow, spacing, typography } from '@/theme';
 
@@ -50,11 +51,42 @@ export const SettingsScreen: React.FC = () => {
   const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
   const setSoundEnabled = useSettingsStore((s) => s.setSoundEnabled);
   const setHapticsEnabled = useSettingsStore((s) => s.setHapticsEnabled);
+  const audience = useAudienceStore((s) => s.audience);
+  const clearAudience = useAudienceStore((s) => s.clearAudience);
+
+  const handleChangeAudience = () => {
+    clearAudience();
+    navigation.reset({ index: 0, routes: [{ name: 'Audience' }] });
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScreenHeader title="Settings" onBack={() => navigation.goBack()} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <Text style={styles.section}>Library</Text>
+        <View style={styles.card}>
+          <Pressable
+            onPress={handleChangeAudience}
+            accessibilityRole="button"
+            accessibilityLabel="Change audience"
+            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+            testID="setting-change-audience"
+          >
+            <Text style={styles.emoji}>{audience === 'adults' ? '\uD83C\uDF38' : '\uD83E\uDDF8'}</Text>
+            <View style={styles.text}>
+              <Text style={styles.rowTitle}>Audience</Text>
+              <Text style={styles.rowDescription}>
+                {audience === 'adults'
+                  ? 'Adults — Women & Flowers'
+                  : audience === 'kids'
+                    ? 'Kids — Animals, Fruits, Vehicles & Shapes'
+                    : 'Not set yet'}
+              </Text>
+            </View>
+            <Text style={styles.chevron}>{'\u203A'}</Text>
+          </Pressable>
+        </View>
+
         <Text style={styles.section}>Feedback</Text>
         <View style={styles.card}>
           <SettingRow
@@ -141,5 +173,14 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: colors.border,
     marginHorizontal: spacing.lg,
+  },
+  rowPressed: {
+    opacity: 0.85,
+  },
+  chevron: {
+    ...typography.heading,
+    color: colors.textMuted,
+    fontSize: 24,
+    marginLeft: spacing.sm,
   },
 });

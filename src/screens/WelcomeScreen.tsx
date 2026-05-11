@@ -6,8 +6,8 @@
 //   - progress bar that animates 0 -> 100% over 4s
 //
 // When the bar fills, we route forward:
-//   - first launch (`onboardingSeen` is false) -> Onboarding
-//   - returning user                            -> Home
+//   - first launch (no audience saved yet) -> Audience picker
+//   - returning user (audience set)        -> Home
 //
 // Uses `Animated` from RN core so we don't pull in any new deps. The bar
 // width is driven by a single shared driver so the visual progress and the
@@ -21,7 +21,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PaintFlower, PaintSwirl } from '@/components/Illustration';
 import type { RootStackParamList } from '@/navigation/types';
-import { useSettingsStore } from '@/state/settingsStore';
+import { useAudienceStore } from '@/state/audienceStore';
 import { colors, radius, spacing, typography } from '@/theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Welcome'>;
@@ -30,7 +30,7 @@ const SPLASH_DURATION_MS = 4000;
 
 export const WelcomeScreen: React.FC = () => {
   const navigation = useNavigation<Nav>();
-  const onboardingSeen = useSettingsStore((s) => s.onboardingSeen);
+  const audience = useAudienceStore((s) => s.audience);
 
   // Single driver: 0 -> 1 over SPLASH_DURATION_MS. Drives the bar width AND
   // signals when we should auto-advance to the next route.
@@ -44,7 +44,7 @@ export const WelcomeScreen: React.FC = () => {
     });
     anim.start(({ finished }) => {
       if (finished) {
-        navigation.replace(onboardingSeen ? 'Home' : 'Onboarding');
+        navigation.replace(audience ? 'Home' : 'Audience');
       }
     });
     return () => {
@@ -130,7 +130,9 @@ const styles = StyleSheet.create({
   brand: {
     ...typography.title,
     fontSize: 40,
-    fontWeight: '900',
+    // Quicksand_700Bold is the heaviest weight loaded by useFonts in App.tsx,
+    // so we let typography.title carry the family name and don't override the
+    // weight here (otherwise iOS Core Text falls back to a system font).
     color: colors.brand,
     letterSpacing: 0.5,
     textAlign: 'center',

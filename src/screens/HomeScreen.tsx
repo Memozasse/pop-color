@@ -8,6 +8,7 @@ import { PainterKidIllustration } from '@/components/Illustration';
 import { getPage, THEMES } from '@/data/pages';
 import type { RootStackParamList } from '@/navigation/types';
 import { useArtworksStore } from '@/state/artworksStore';
+import { AUDIENCE_THEMES, useAudienceStore } from '@/state/audienceStore';
 import { colors, radius, shadow, spacing, typography } from '@/theme';
 
 type HomeNav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
@@ -15,6 +16,16 @@ type HomeNav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 export const HomeScreen: React.FC = () => {
   const navigation = useNavigation<HomeNav>();
   const artworks = useArtworksStore((s) => s.artworks);
+  const audience = useAudienceStore((s) => s.audience);
+
+  // Themes visible to this audience. If we don't have an audience yet
+  // (e.g. user backstacked from Audience without picking), show every
+  // theme rather than an empty library.
+  const visibleThemes = useMemo(() => {
+    if (!audience) return THEMES;
+    const allowed = new Set(AUDIENCE_THEMES[audience]);
+    return THEMES.filter((t) => allowed.has(t.id));
+  }, [audience]);
 
   // The featured card resumes the user's most recently-edited painting if
   // there is one, otherwise spotlights starting their first painting.
@@ -22,9 +33,11 @@ export const HomeScreen: React.FC = () => {
   const recentPage = recentArtwork ? getPage(recentArtwork.pageId) : undefined;
 
   const totalPages = useMemo(
-    () => THEMES.reduce((acc, t) => acc + t.pageIds.length, 0),
-    [],
+    () => visibleThemes.reduce((acc, t) => acc + t.pageIds.length, 0),
+    [visibleThemes],
   );
+
+  const greetingName = audience === 'adults' ? 'Artist!' : 'Painter!';
 
   const handleResume = () => {
     if (recentArtwork && recentPage) {
@@ -32,8 +45,8 @@ export const HomeScreen: React.FC = () => {
         pageId: recentPage.id,
         artworkId: recentArtwork.id,
       });
-    } else {
-      navigation.navigate('Gallery', { themeId: THEMES[0].id });
+    } else if (visibleThemes.length > 0) {
+      navigation.navigate('Gallery', { themeId: visibleThemes[0].id });
     }
   };
 
@@ -74,7 +87,7 @@ export const HomeScreen: React.FC = () => {
         {/* ---- Greeting ---- */}
         <View style={styles.greetingBlock}>
           <Text style={styles.greetingKicker}>Welcome Back,</Text>
-          <Text style={styles.greetingName}>Painter!</Text>
+          <Text style={styles.greetingName}>{greetingName}</Text>
         </View>
 
         {/* ---- Category quick-access circles (one per theme) ---- */}
@@ -83,7 +96,7 @@ export const HomeScreen: React.FC = () => {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.categoryRow}
         >
-          {THEMES.map((theme, idx) => (
+          {visibleThemes.map((theme, idx) => (
             <Pressable
               key={theme.id}
               onPress={() => navigation.navigate('Gallery', { themeId: theme.id })}
@@ -147,7 +160,7 @@ export const HomeScreen: React.FC = () => {
 
         {/* ---- Bento grid: 2-col raspberry tiles, one per theme ---- */}
         <View style={styles.bentoGrid}>
-          {THEMES.map((theme, idx) => {
+          {visibleThemes.map((theme, idx) => {
             const accent = idx % 2 === 1;
             return (
               <Pressable

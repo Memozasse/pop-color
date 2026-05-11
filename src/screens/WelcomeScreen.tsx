@@ -130,7 +130,9 @@ const styles = StyleSheet.create({
   brand: {
     ...typography.title,
     fontSize: 40,
-    fontWeight: '900',
+    // Quicksand_700Bold is the heaviest weight loaded by useFonts in App.tsx,
+    // so we let typography.title carry the family name and don't override the
+    // weight here (otherwise iOS Core Text falls back to a system font).
     color: colors.brand,
     letterSpacing: 0.5,
     textAlign: 'center',

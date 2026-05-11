@@ -10,6 +10,11 @@ import { colors, radius, shadow, spacing, typography } from '@/theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Audience'>;
 
+// Built at runtime via fromCodePoint so Metro doesn't re-escape the chars in
+// the emitted web bundle (which surfaces as the literal text "\uD83E\uDDF8").
+const KIDS_EMOJI = String.fromCodePoint(0x1f9f8); // teddy bear
+const ADULTS_EMOJI = String.fromCodePoint(0x1f338); // cherry blossom
+
 interface AudienceButtonProps {
   label: string;
   caption: string;
@@ -88,7 +93,7 @@ export const AudienceScreen: React.FC = () => {
           <AudienceButton
             label="Kids"
             caption="Cute animals, fruits, vehicles & shapes"
-            emoji="\uD83E\uDDF8"
+            emoji={KIDS_EMOJI}
             background={colors.brand}
             pressedBackground={colors.brandDeep}
             testID="audience-kids"
@@ -97,7 +102,7 @@ export const AudienceScreen: React.FC = () => {
           <AudienceButton
             label="Adults"
             caption="Detailed women & flowers portraits"
-            emoji="\uD83C\uDF38"
+            emoji={ADULTS_EMOJI}
             background={colors.accent}
             pressedBackground={colors.accentDeep}
             testID="audience-adults"
